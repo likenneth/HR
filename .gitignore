@@ -94,3 +94,4 @@ external/
 draws/
 plot/
 
+openmmlab/*.pkl

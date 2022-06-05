@@ -12,6 +12,7 @@ import argparse
 import os
 import pprint
 import shutil
+import copy
 
 import torch
 import torch.nn.parallel
@@ -130,6 +131,23 @@ def main():
             normalize,
         ])
     )
+
+    # add FineGym etc. into training
+    additional_trainset = []
+    for additional_cfg in cfg.ADDITIONAL_TRAINSET:
+        new_cfg = copy.deepcopy(cfg)
+        new_cfg.DATASET = additional_cfg
+        additional_trainset.append(
+            eval('dataset.'+new_cfg.DATASET.DATASET)(
+                new_cfg, new_cfg.DATASET.ROOT, new_cfg.DATASET.TRAIN_SET, True,
+                transforms.Compose([
+                    transforms.ToTensor(),
+                    normalize,
+                ])
+            )
+        )
+
+
     valid_dataset = eval('dataset.'+cfg.DATASET.DATASET)(
         cfg, cfg.DATASET.ROOT, cfg.DATASET.TEST_SET, False,
         transforms.Compose([

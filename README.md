@@ -3,13 +3,38 @@ Additional env setup:
 pip install tensorboardx -U 
 pip install tenaorboard
 conda install -c conda-forge notebook
+conda install seaborn
 ```
 
 CLI for training and testing (on val set) now:
 ```
 python tools/train.py --cfg experiments/coco/hrnet/baseline.yaml GPUS '(0,1,2,3,4,5,6,7)' TRAIN.BATCH_SIZE_PER_GPU 48 TEST.BATCH_SIZE_PER_GPU 48
+
 python tools/test.py --cfg experiments/coco/hrnet/baseline.yaml TEST.MODEL_FILE <some pth> TEST.USE_GT_BBOX False
 ```
+
+# Kenneth's Project
+
+Pyskl pipeline for FineGym (as degenerated tracking results from CorrTrack): 
++ Download results in pyskl pkl format
+    + Global coordinates
+    + No bounding boxes
+    + Only one person per frame, tubelets cut by actions
++ Retrain by mixing with COCO annotations, observe COCO mAP on val2017
++ val2017 score: 
+
+Full pipeline for FineGym: 
++ Use BigDet to detect persons from FineGym, save down results in COCO json format
++ Inference (test) with trained HRNet, save down results in COCO json format
++ Filter out background persons and make tubelets like from CorrTrack
++ Interpolate with another repo, save down results in pyskl pkl format
++ Retrain by mixing with COCO annotations, observe COCO mAP on val2017
++ val2017 score: 
+
+Full pipeline for Sports1M: 
++ Run CorrTrack on Sports 1M, save down tubelets with bounding boxes
++ Interpolate with another repo, save down results in pyskl pkl format
++ Retrain by mixing with COCO annotations, observe COCO mAP on val2017
 
 # Deep High-Resolution Representation Learning for Human Pose Estimation (CVPR 2019)
 ## News
