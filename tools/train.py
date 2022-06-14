@@ -37,6 +37,7 @@ from utils.utils import get_model_summary
 import dataset
 import models
 
+DEBUG = True
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train keypoints network')
@@ -89,9 +90,7 @@ def main():
     torch.backends.cudnn.deterministic = cfg.CUDNN.DETERMINISTIC
     torch.backends.cudnn.enabled = cfg.CUDNN.ENABLED
 
-    model = eval('models.'+cfg.MODEL.NAME+'.get_pose_net')(
-        cfg, is_train=True
-    )
+    model = eval('models.'+cfg.MODEL.NAME+'.get_pose_net')(cfg, is_train=True)
 
     # copy model file
     this_dir = os.path.dirname(__file__)
@@ -124,6 +123,20 @@ def main():
     normalize = transforms.Normalize(
         mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
     )
+
+    # add FineGym etc. into training
+    additional_trainset = []
+    if "FINEGYM" in cfg:
+        additional_trainset.append(
+            eval('dataset.'+cfg.FINEGYM.DATASET)(
+                cfg, cfg.FINEGYM.ROOT, cfg.FINEGYM.TRAIN_SET, True,
+                transforms.Compose([
+                    transforms.ToTensor(),
+                    normalize,
+                ])
+            )
+        )
+
     train_dataset = eval('dataset.'+cfg.DATASET.DATASET)(
         cfg, cfg.DATASET.ROOT, cfg.DATASET.TRAIN_SET, True,
         transforms.Compose([
@@ -132,22 +145,6 @@ def main():
         ])
     )
 
-    # add FineGym etc. into training
-    additional_trainset = []
-    for additional_cfg in cfg.ADDITIONAL_TRAINSET:
-        new_cfg = copy.deepcopy(cfg)
-        new_cfg.DATASET = additional_cfg
-        additional_trainset.append(
-            eval('dataset.'+new_cfg.DATASET.DATASET)(
-                new_cfg, new_cfg.DATASET.ROOT, new_cfg.DATASET.TRAIN_SET, True,
-                transforms.Compose([
-                    transforms.ToTensor(),
-                    normalize,
-                ])
-            )
-        )
-
-
     valid_dataset = eval('dataset.'+cfg.DATASET.DATASET)(
         cfg, cfg.DATASET.ROOT, cfg.DATASET.TEST_SET, False,
         transforms.Compose([
@@ -155,6 +152,9 @@ def main():
             normalize,
         ])
     )
+
+    if DEBUG:
+        train_dataset = additional_trainset[0]
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset,

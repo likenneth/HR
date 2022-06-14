@@ -79,6 +79,7 @@ target/
 *.ipynb
 *.params
 *.json
+*.pkl
 .vscode/
 
 lib/pycocotools/_mask.c
@@ -94,4 +95,4 @@ external/
 draws/
 plot/
 
-openmmlab/*.pkl
+openmmlab/demos_*/*

@@ -13,28 +13,37 @@ python tools/train.py --cfg experiments/coco/hrnet/baseline.yaml GPUS '(0,1,2,3,
 python tools/test.py --cfg experiments/coco/hrnet/baseline.yaml TEST.MODEL_FILE <some pth> TEST.USE_GT_BBOX False
 ```
 
+CLI for training and testing (on val set) now:
+```
+python tools/train.py --cfg experiments/coco/hrnet/wfinegym.yaml GPUS '(0,1,2,3,4,5,6,7)' TRAIN.BATCH_SIZE_PER_GPU 48 TEST.BATCH_SIZE_PER_GPU 48
+```
+
+
 # Kenneth's Project
 
-Pyskl pipeline for FineGym (as degenerated tracking results from CorrTrack): 
-+ Download results in pyskl pkl format
-    + Global coordinates
-    + No bounding boxes
-    + Only one person per frame, tubelets cut by actions
-+ Retrain by mixing with COCO annotations, observe COCO mAP on val2017
-+ val2017 score: 
+Pyskl skeleton results are unusable. 
+It's hard to create gymnast tracking for Finegym by simple heuristic. 
 
-Full pipeline for FineGym: 
-+ Use BigDet to detect persons from FineGym, save down results in COCO json format
-+ Inference (test) with trained HRNet, save down results in COCO json format
-+ Filter out background persons and make tubelets like from CorrTrack
-+ Interpolate with another repo, save down results in pyskl pkl format
-+ Retrain by mixing with COCO annotations, observe COCO mAP on val2017
-+ val2017 score: 
+Full pipeline for FineGym, Sports1M, PoseTrack21, etc.: (developed on PoseTrack)
++ With `HR/openmmlab`, infer with Swin to get a annotation file like `~/CorrTrack/baselines/data/detections/PoseTrack21_tracktor_bb_thres_0.5_val.json`
+    + bbox in format xywh while mmdet gives result in xyxy
+    + save to `CorrTrack/baselines/data/detections`
++ With `CorrTrack`, save down tubelets with bounding boxes, in CorrTrack format
+    + 1 json for 1 video
+    + 1 list element in annotations for one bbox
+    + 1 list element in images for one frame
+    + bbox in format xywh
+    + save to `CorrTrack/baselines/outputs/tracking_baselines/corrtrack_baseline/pose_3_stage_corr_tracking`
++ With `HR/openmmlab`, infer with HRNet, (do keypoint smoothing), and save down results in COCO format:
+    + 1 pkl for a list of persons
+    + COCO format has bbox format xywh
+    + in a result folder in `HR/openmmlab`
++ Visualize with `pyskl` or `HR/jupyters`
++ With `HR`, retrain by mixing with COCO annotations (with confidence level), observe COCO mAP on val2017
 
-Full pipeline for Sports1M: 
-+ Run CorrTrack on Sports 1M, save down tubelets with bounding boxes
-+ Interpolate with another repo, save down results in pyskl pkl format
-+ Retrain by mixing with COCO annotations, observe COCO mAP on val2017
+A baseline for comparision:
++ Run person detection with Swin and pose estimation with HRNet with `openmmlab`
++ Convert to COCO format and do joint training wit COCO annotations
 
 # Deep High-Resolution Representation Learning for Human Pose Estimation (CVPR 2019)
 ## News

@@ -13,6 +13,7 @@ from collections import OrderedDict
 import logging
 import os
 import pickle
+from tqdm import tqdm
 
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
@@ -25,6 +26,7 @@ from nms.nms import soft_oks_nms
 
 
 logger = logging.getLogger(__name__)
+DEBUG=False
 
 
 class FineGymDataset(JointsDataset):
@@ -65,15 +67,7 @@ class FineGymDataset(JointsDataset):
         self.image_height = cfg.MODEL.IMAGE_SIZE[1]
         self.aspect_ratio = self.image_width * 1.0 / self.image_height
         self.pixel_std = 200
-
-        with open(os.path.join(cfg.ROOT, "gym_hrnet.pkl"), "rb") as input_file:
-            read = pickle.load(input_file)
-            split = read["split"]["train" if is_train else "val"]
-            annotations = read["annotations"]
-        self.annotations = []
-        for instance in annotations:
-            if instance["frame_dir"] in split:
-                self.annotations.append(instance)
+        fps = 25
 
         self.num_joints = 17
         self.flip_pairs = [[1, 2], [3, 4], [5, 6], [7, 8],
@@ -90,10 +84,52 @@ class FineGymDataset(JointsDataset):
             dtype=np.float32
         ).reshape((self.num_joints, 1))
 
-        self.db = self._get_db()
+        self.kpt_conf_thres = cfg.FINEGYM.KPT_CONF_THRES  # only use label with higher confidence
+        self.bb_conf_thres = cfg.FINEGYM.BB_CONF_THRES  # only use label with higher confidence
+        action_annotations = []
+        for part_file in os.listdir(cfg.FINEGYM.PSEUDO_LABEL):
+            with open(os.path.join(cfg.FINEGYM.PSEUDO_LABEL, part_file), "rb") as input_file:
+                read = pickle.load(input_file)
+                action_annotations.extend(read)
+        # 'time_stamp', 'action_name', 'bb', 'bb_score', 'img_shape', 'original_shape', 'total_frames', 'num_person_raw', 'keypoint', 'keypoint_score'
+        # 'keypoint': [max #person, #frame, 17, 3], use [0, 0, 0] to fill persons not appearing
 
-        if is_train and cfg.DATASET.SELECT_DATA:
-            self.db = self.select_data(self.db)
+        self.db = []
+        for action in tqdm(action_annotations[:len(action_annotations) if not DEBUG else 100]):
+            s = round(action['time_stamp'][0] * fps)
+            e = round(action['time_stamp'][1] * fps)
+            youtube_name, _, event_s, event_e, _, action_s, action_e = action["action_name"].split("_")
+            event_folder = os.path.join(self.root, "processed_frames", "_".join([youtube_name, "E", event_s, event_e]))
+            num_person, num_frame = action["bb"].shape[:2]
+            total_frames = len(list(os.listdir(event_folder)))
+            e = min(total_frames-1, e)
+            assert num_frame == e - s + 1, f"{num_frame} vs {e - s + 1} in {event_folder}"
+            for frame_index, glob_fidx in enumerate(range(s, e+1)):
+                
+                for person_index in range(num_person):
+                    if action['bb_score'][person_index, frame_index] > self.bb_conf_thres and np.any(action["keypoint"][person_index, frame_index, -1] > self.kpt_conf_thres):
+                        kpt = action["keypoint"][person_index, frame_index]  # [17, 2]
+                        kpt_score = action["keypoint_score"][person_index, frame_index]  # [17]
+                        # import ipdb; ipdb.set_trace()
+                        joints_3d = np.zeros((self.num_joints, 3), dtype=np.float)
+                        joints_3d[:, :2] = kpt[:, :2]
+                        joints_3d_vis = np.zeros((self.num_joints, 3), dtype=np.float)
+                        joints_3d_vis[:, :2] = (kpt_score[:, None] > self.kpt_conf_thres).astype(np.float)
+                        center, scale = self._box2cs(action['bb'][person_index, frame_index, :])
+                        self.db.append({
+                            'image': os.path.join(event_folder, f"{glob_fidx:03}.jpg"),
+                            'center': center,
+                            'scale': scale,
+                            'joints_3d': joints_3d,
+                            'joints_3d_vis': joints_3d_vis,
+                            'filename': '',
+                            'imgnum': 0,
+                        })
+
+        # self.db = self._get_db()
+
+        # if is_train and cfg.FINEGYM.SELECT_DATA:
+        #     self.db = self.select_data(self.db)
 
         logger.info('=> load {} samples'.format(len(self.db)))
 

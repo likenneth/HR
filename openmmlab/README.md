@@ -8,5 +8,5 @@ Use `mm` environment for this sub-folder. This folder is used for extracting bou
 
 ```
 cd openmmlab
-CUDA_VISIBLE_DEVICES=1 python mmdet_finegym.py --rank 0 --world-size 128
+CUDA_VISIBLE_DEVICES=1 python mmdet_finegym.py --rank 10 --world-size 32
 ```

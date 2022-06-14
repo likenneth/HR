@@ -22,18 +22,20 @@ DATASET:
   SCALE_FACTOR: 0.35
   TEST_SET: 'val2017'
   TRAIN_SET: 'train2017'
-ADDITIONAL_TRAINSET:
-  - PSEUDO_LABEL: 'gym_hrnet.pkl'
-    COLOR_RGB: true
-    DATASET: 'finegym'
-    FLIP: true
-    NUM_JOINTS_HALF_BODY: 8
-    PROB_HALF_BODY: 0.3
-    ROOT: 'data/finegym/'
-    ROT_FACTOR: 45
-    SCALE_FACTOR: 0.35
-    TEST_SET: 'val2017'
-    TRAIN_SET: 'train2017'
+FINEGYM:
+  PSEUDO_LABEL: 'openmmlab/FineGym_Swin_HRNet'
+  BB_CONF_THRES: 0.8
+  KPT_CONF_THRES: 0.8
+  COLOR_RGB: true
+  DATASET: 'finegym'
+  FLIP: true
+  NUM_JOINTS_HALF_BODY: 8
+  PROB_HALF_BODY: 0.3
+  ROOT: 'data/finegym'
+  ROT_FACTOR: 45
+  SCALE_FACTOR: 0.35
+  TEST_SET: 'val2017'
+  TRAIN_SET: 'train2017'
 MODEL:
   INIT_WEIGHTS: true
   NAME: pose_hrnet

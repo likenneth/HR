@@ -128,38 +128,14 @@ def get_annos():
 
 def main():
     args = parse_args()
-    # assert args.out.endswith('.pkl')
-
-    # lines = mrlines(args.video_list)
-    # lines = [x.split() for x in lines]
-
-    # * We set 'frame_dir' as the base name (w/o. suffix) of each video
-    # assert len(lines[0]) in [1, 2]
-    # if len(lines[0]) == 1:
-    #     annos = [dict(frame_dir=osp.basename(x[0]).split('.')[0], filename=x[0]) for x in lines]
-    # else:
-    #     annos = [dict(frame_dir=osp.basename(x[0]).split('.')[0], filename=x[0], label=int(x[1])) for x in lines]
-
-    # init_dist('pytorch', backend='nccl')
-    # rank, world_size = get_dist_info()
-    # print(f"After init NCCL backend, {rank}, {world_size}")
     rank, world_size = args.rank, args.world_size
     annos = get_annos()
 
-    # os.makedirs(args.tmpdir, exist_ok=True)
-    # dist.barrier()
     my_part = annos[rank::world_size]
-    # print("Before det init")
-
-    # print(args.det_ckpt)
-    # print(args.det_config)
-    # print(type(args.det_config), type(args.det_ckpt))
 
     det_model = init_detector(args.det_config, args.det_ckpt, device='cuda')
-    # print("After det init, before pose init")
     assert det_model.CLASSES[0] == 'person', 'A detector trained on COCO is required'
     pose_model = init_pose_model(args.pose_config, args.pose_ckpt, device='cuda')
-    # print("After pose init")
 
     for anno in tqdm(my_part):
         fps = 25
@@ -167,7 +143,6 @@ def main():
         e = round(anno['time_stamp'][1] * fps)
         frames = extract_frame(anno['video_path'])[s:e+1]
         det_results_ = detection_inference(det_model, frames)  # det_results_: a T-long list
-        # import pdb; pdb.set_trace()
         # * Get detection results for human
         det_results = [x[0][0] for x in det_results_]  # x: a tuple for (detection, segmentation) result; x[0], a 80-long list of np.array of shape 10*5; for each image; 80 = #cls
         for i, res in enumerate(det_results):
@@ -178,7 +153,13 @@ def main():
             det_results[i] = res
 
         # det_results: a T-long list of [#person_t, 5] with varying #person_t for each time step
-        zero_filled_bb, pose_results = pose_inference(pose_model, frames, det_results)  # [max #person, #frame, 17, 3], use [0, 0, 0] to fill persons not appearing
+        zero_filled_bb, pose_results = pose_inference(pose_model, frames, det_results)  # [max #person, #frame, 5], [max #person, #frame, 17, 3], use [0, 0, 0] to fill persons not appearing
+        # xyxy to xywh
+        w = zero_filled_bb[..., 2] - zero_filled_bb[..., 0]
+        h = zero_filled_bb[..., 3] - zero_filled_bb[..., 1]
+        zero_filled_bb[..., 2] = w
+        zero_filled_bb[..., 3] = h
+        
         shape = frames[0].shape[:2]
         anno["bb"] = zero_filled_bb[..., :4]
         anno["bb_score"] = zero_filled_bb[..., 4]
@@ -189,22 +170,8 @@ def main():
         anno['keypoint_score'] = pose_results[..., 2]#.astype(np.float16)
         anno.pop('video_path')
 
-    mmcv.dump(my_part, osp.join(f'res_{rank}outof{world_size}.pkl'))
-    # dist.barrier()
-
-    # if rank == 0:
-    #     parts = [mmcv.load(osp.join(args.tmpdir, f'part_{i}.pkl')) for i in range(world_size)]
-    #     rem = len(annos) % world_size
-    #     if rem:
-    #         for i in range(rem, world_size):
-    #             parts[i].append(None)
-
-    #     ordered_results = []
-    #     for res in zip(*parts):
-    #         ordered_results.extend(list(res))
-    #     ordered_results = ordered_results[:len(annos)]
-    #     mmcv.dump(ordered_results, args.out)
-
+    os.makedirs("FineGym_Swin_HRNet", exist_ok=True) 
+    mmcv.dump(my_part, osp.join("FineGym_Swin_HRNet", f'res_{rank}outof{world_size}.pkl'))
 
 if __name__ == '__main__':
     main()
