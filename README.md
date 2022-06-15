@@ -8,14 +8,14 @@ conda install seaborn
 
 CLI for training and testing (on val set) now:
 ```
-python tools/train.py --cfg experiments/coco/hrnet/baseline.yaml GPUS '(0,1,2,3,4,5,6,7)' TRAIN.BATCH_SIZE_PER_GPU 48 TEST.BATCH_SIZE_PER_GPU 48
+python tools/train.py --cfg experiments/coco/hrnet/baseline.yaml GPUS '(0,1,2,3,4,5,6,7)'
 
 python tools/test.py --cfg experiments/coco/hrnet/baseline.yaml TEST.MODEL_FILE <some pth> TEST.USE_GT_BBOX False
 ```
 
 CLI for training and testing (on val set) now:
 ```
-python tools/train.py --cfg experiments/coco/hrnet/wfinegym.yaml GPUS '(0,1,2,3,4,5,6,7)' TRAIN.BATCH_SIZE_PER_GPU 48 TEST.BATCH_SIZE_PER_GPU 48
+/private/home/keli22/.conda/envs/hr/bin/python tools/train.py --cfg experiments/coco/hrnet/combined.yaml GPUS '(0,1,2,3,4,5,6,7)'
 ```
 
 

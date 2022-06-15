@@ -13,6 +13,7 @@ import os
 import pprint
 import shutil
 import copy
+import itertools
 
 import torch
 import torch.nn.parallel
@@ -37,7 +38,56 @@ from utils.utils import get_model_summary
 import dataset
 import models
 
-DEBUG = True
+DEBUG = False
+
+class CatDataLoaders(object):
+    def __init__(self, datasets, batch_sizes, cfg):
+        self.dataloaders = []
+        self.batch_sizes = batch_sizes
+        for dataset, batch_size in zip(datasets, batch_sizes):
+            self.dataloaders.append(
+                torch.utils.data.DataLoader(
+                    dataset,
+                    batch_size=batch_size*len(cfg.GPUS),
+                    shuffle=cfg.TRAIN.SHUFFLE,
+                    num_workers=cfg.WORKERS // len(datasets) if cfg.WORKERS >= 0 else -1,
+                    pin_memory=cfg.PIN_MEMORY
+                )
+            )
+        print(f"=> Concatenate Dataset Created with batch size {batch_sizes} and length {len(self)}")
+
+    def __len__(self, ):
+        return len(self.dataloaders[0])
+
+    def __iter__(self):
+        self.loader_iter = []
+        for i, data_loader in enumerate(self.dataloaders):
+            if i == 0:
+                self.loader_iter.append(iter(data_loader))  # will raise StopIteration once COCO is drain, as required by __next__
+            else:
+                self.loader_iter.append(itertools.cycle(iter(data_loader)))  # in case some datasets is smaller than COCO
+        return self
+
+    def __next__(self):
+        input_ct, target_ct, target_weight_ct, meta_ct = [], [], [], []
+        for data_iter in self.loader_iter:
+            input, target, target_weight, meta = next(data_iter)
+            input_ct.append(input)  # B, 3, W, H
+            target_ct.append(target)  # B, 17, W // 4, H // 4
+            target_weight_ct.append(target_weight)  # B, 17, 1
+            meta_ct.append(meta)  # a dict of list or tensors
+        input = torch.cat(input_ct, dim=0)
+        target = torch.cat(target_ct, dim=0)
+        target_weight = torch.cat(target_weight_ct, dim=0)
+        meta = {}
+        for k in meta_ct[0].keys():
+            if type(meta_ct[0][k]) == torch.Tensor:
+                meta[k] = torch.cat([_[k] for _ in meta_ct], dim=0)
+            elif type(meta_ct[0][k]) == list:
+                meta[k] = [__ for _ in meta_ct for __ in _[k]]
+            else:
+                assert 0
+        return input, target, target_weight, meta
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train keypoints network')
@@ -79,8 +129,7 @@ def main():
     args = parse_args()
     update_config(cfg, args)
 
-    logger, final_output_dir, tb_log_dir = create_logger(
-        cfg, args.cfg, 'train')
+    logger, final_output_dir, tb_log_dir = create_logger(cfg, args.cfg, 'train')
 
     logger.info(pprint.pformat(args))
     logger.info(cfg)
@@ -105,9 +154,7 @@ def main():
         'valid_global_steps': 0,
     }
 
-    dump_input = torch.rand(
-        (1, 3, cfg.MODEL.IMAGE_SIZE[1], cfg.MODEL.IMAGE_SIZE[0])
-    )
+    dump_input = torch.rand((1, 3, cfg.MODEL.IMAGE_SIZE[1], cfg.MODEL.IMAGE_SIZE[0]))
     writer_dict['writer'].add_graph(model, (dump_input, ))
 
     logger.info(get_model_summary(model, dump_input))
@@ -125,9 +172,11 @@ def main():
     )
 
     # add FineGym etc. into training
+    additional_pcts = []  # a list of int, batch size per GPU for additional datasets
     additional_trainset = []
-    if "FINEGYM" in cfg:
-        additional_trainset.append(
+    if cfg.FINEGYM.PCT > 0:
+        additional_pcts.append(cfg.FINEGYM.PCT)
+        additional_trainset.append(      
             eval('dataset.'+cfg.FINEGYM.DATASET)(
                 cfg, cfg.FINEGYM.ROOT, cfg.FINEGYM.TRAIN_SET, True,
                 transforms.Compose([
@@ -136,14 +185,23 @@ def main():
                 ])
             )
         )
+    # duplicate the snippet above and replace FINEGYM with PT21, etc.
 
-    train_dataset = eval('dataset.'+cfg.DATASET.DATASET)(
-        cfg, cfg.DATASET.ROOT, cfg.DATASET.TRAIN_SET, True,
-        transforms.Compose([
-            transforms.ToTensor(),
-            normalize,
-        ])
-    )
+    if sum(additional_pcts) < cfg.TRAIN.BATCH_SIZE_PER_GPU:
+        additional_pcts.insert(0, cfg.TRAIN.BATCH_SIZE_PER_GPU - sum(additional_pcts))
+        additional_trainset.insert(0, 
+            eval('dataset.'+cfg.DATASET.DATASET)(
+                cfg, cfg.DATASET.ROOT, cfg.DATASET.TRAIN_SET, True,
+                transforms.Compose([
+                    transforms.ToTensor(),
+                    normalize,
+                ])
+            )
+        )
+    elif sum(additional_pcts) == cfg.TRAIN.BATCH_SIZE_PER_GPU:
+        pass  # not loading COCO for training
+    else:
+        assert 0
 
     valid_dataset = eval('dataset.'+cfg.DATASET.DATASET)(
         cfg, cfg.DATASET.ROOT, cfg.DATASET.TEST_SET, False,
@@ -155,14 +213,16 @@ def main():
 
     if DEBUG:
         train_dataset = additional_trainset[0]
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset,
+            batch_size=cfg.TRAIN.BATCH_SIZE_PER_GPU*len(cfg.GPUS),
+            shuffle=cfg.TRAIN.SHUFFLE,
+            num_workers=cfg.WORKERS,
+            pin_memory=cfg.PIN_MEMORY
+        )
+    else:
+        train_loader = CatDataLoaders(additional_trainset, additional_pcts, cfg)
 
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=cfg.TRAIN.BATCH_SIZE_PER_GPU*len(cfg.GPUS),
-        shuffle=cfg.TRAIN.SHUFFLE,
-        num_workers=cfg.WORKERS,
-        pin_memory=cfg.PIN_MEMORY
-    )
     valid_loader = torch.utils.data.DataLoader(
         valid_dataset,
         batch_size=cfg.TEST.BATCH_SIZE_PER_GPU*len(cfg.GPUS),

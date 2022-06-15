@@ -127,12 +127,11 @@ class JointsDataset(Dataset):
                 image_file, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION
             )
 
-        if self.color_rgb:
-            data_numpy = cv2.cvtColor(data_numpy, cv2.COLOR_BGR2RGB)
-
         if data_numpy is None:
             logger.error('=> fail to read {}'.format(image_file))
             raise ValueError('Fail to read {}'.format(image_file))
+        if self.color_rgb:
+            data_numpy = cv2.cvtColor(data_numpy, cv2.COLOR_BGR2RGB)
 
         joints = db_rec['joints_3d']
         joints_vis = db_rec['joints_3d_vis']

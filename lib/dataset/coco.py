@@ -103,6 +103,8 @@ class COCODataset(JointsDataset):
         ).reshape((self.num_joints, 1))
 
         self.db = self._get_db()
+        if is_train:
+            self.db = self.db[:round(len(self.db) * cfg.DATASET.PARTIAL)]
 
         if is_train and cfg.DATASET.SELECT_DATA:
             self.db = self.select_data(self.db)

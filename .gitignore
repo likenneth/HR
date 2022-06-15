@@ -95,4 +95,5 @@ external/
 draws/
 plot/
 
+core
 openmmlab/demos_*/*

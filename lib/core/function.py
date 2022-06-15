@@ -36,7 +36,9 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
 
     end = time.time()
     for i, (input, target, target_weight, meta) in enumerate(train_loader):
+        # import ipdb; ipdb.set_trace()
         # measure data loading time
+
         data_time.update(time.time() - end)
 
         # compute output
