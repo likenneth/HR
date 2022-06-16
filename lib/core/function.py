@@ -223,17 +223,19 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
             )
             if isinstance(name_values, list):
                 for name_value in name_values:
+                    for k, w in dict(name_value):
+                        writer.add_scalars(
+                            k,
+                            w,
+                            global_steps
+                        )
+            else:
+                for k, w in dict(name_values):
                     writer.add_scalars(
-                        'valid',
-                        dict(name_value),
+                        k,
+                        w,
                         global_steps
                     )
-            else:
-                writer.add_scalars(
-                    'valid',
-                    dict(name_values),
-                    global_steps
-                )
             writer_dict['valid_global_steps'] = global_steps + 1
 
     return perf_indicator

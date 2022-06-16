@@ -19,7 +19,7 @@ import torch.optim as optim
 import torch.nn as nn
 
 
-def create_logger(cfg, cfg_name, phase='train'):
+def create_logger(cfg, cfg_name, phase='train', enforced_name=''):
     root_output_dir = Path(cfg.OUTPUT_DIR)
     # set up logger
     if not root_output_dir.exists():
@@ -30,7 +30,10 @@ def create_logger(cfg, cfg_name, phase='train'):
         if cfg.DATASET.HYBRID_JOINTS_TYPE else cfg.DATASET.DATASET
     dataset = dataset.replace(':', '_')
     model = cfg.MODEL.NAME
-    cfg_name = os.path.basename(cfg_name).split('.')[0]
+    if enforced_name == '':
+        cfg_name = os.path.basename(cfg_name).split('.')[0]
+    else:
+        cfg_name = enforced_name
 
     final_output_dir = root_output_dir / dataset / model / cfg_name
 

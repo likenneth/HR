@@ -6,18 +6,12 @@ conda install -c conda-forge notebook
 conda install seaborn
 ```
 
-CLI for training and testing (on val set) now:
+Reproduce baseline:
 ```
-python tools/train.py --cfg experiments/coco/hrnet/baseline.yaml GPUS '(0,1,2,3,4,5,6,7)'
+python tools/train.py --cfg experiments/coco/hrnet/baseline.yaml --exp coco DATASET.PARTIAL 1.0 GPUS '(0,1,2,3,4,5,6,7)'
 
 python tools/test.py --cfg experiments/coco/hrnet/baseline.yaml TEST.MODEL_FILE <some pth> TEST.USE_GT_BBOX False
 ```
-
-CLI for training and testing (on val set) now:
-```
-/private/home/keli22/.conda/envs/hr/bin/python tools/train.py --cfg experiments/coco/hrnet/combined.yaml GPUS '(0,1,2,3,4,5,6,7)'
-```
-
 
 # Kenneth's Project
 

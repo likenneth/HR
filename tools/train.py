@@ -102,6 +102,11 @@ def parse_args():
                         default=None,
                         nargs=argparse.REMAINDER)
 
+    parser.add_argument('--exp',
+                        help='name for this experirment',
+                        type=str,
+                        default='')                
+
     # philly
     parser.add_argument('--modelDir',
                         help='model directory',
@@ -129,7 +134,7 @@ def main():
     args = parse_args()
     update_config(cfg, args)
 
-    logger, final_output_dir, tb_log_dir = create_logger(cfg, args.cfg, 'train')
+    logger, final_output_dir, tb_log_dir = create_logger(cfg, args.cfg, 'train', enforced_name=args.exp)
 
     logger.info(pprint.pformat(args))
     logger.info(cfg)
@@ -155,7 +160,7 @@ def main():
     }
 
     dump_input = torch.rand((1, 3, cfg.MODEL.IMAGE_SIZE[1], cfg.MODEL.IMAGE_SIZE[0]))
-    writer_dict['writer'].add_graph(model, (dump_input, ))
+    # writer_dict['writer'].add_graph(model, (dump_input, ))
 
     logger.info(get_model_summary(model, dump_input))
 
@@ -263,7 +268,6 @@ def main():
         # train for one epoch
         train(cfg, train_loader, model, criterion, optimizer, epoch,
               final_output_dir, tb_log_dir, writer_dict)
-
 
         # evaluate on validation set
         perf_indicator = validate(

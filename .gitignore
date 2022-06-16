@@ -97,3 +97,6 @@ plot/
 
 core
 openmmlab/demos_*/*
+openmmlab/*/*.txt
+openmmlab/*/*.json
+openmmlab/*/*.pkl

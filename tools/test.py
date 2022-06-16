@@ -45,6 +45,12 @@ def parse_args():
                         default=None,
                         nargs=argparse.REMAINDER)
 
+    parser.add_argument('--exp',
+                        help='name for this experirment',
+                        type=str,
+                        default='')                
+
+    # philly
     parser.add_argument('--modelDir',
                         help='model directory',
                         type=str,
@@ -70,8 +76,7 @@ def main():
     args = parse_args()
     update_config(cfg, args)
 
-    logger, final_output_dir, tb_log_dir = create_logger(
-        cfg, args.cfg, 'valid')
+    logger, final_output_dir, tb_log_dir = create_logger(cfg, args.cfg, 'valid', enforced_name=args.exp)
 
     logger.info(pprint.pformat(args))
     logger.info(cfg)
