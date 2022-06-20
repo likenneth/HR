@@ -53,6 +53,7 @@ class COCODataset(JointsDataset):
     '''
     def __init__(self, cfg, root, image_set, is_train, transform=None):
         super().__init__(cfg, root, image_set, is_train, transform)
+        self.name = "COCO"
         self.nms_thre = cfg.TEST.NMS_THRE
         self.image_thre = cfg.TEST.IMAGE_THRE
         self.soft_nms = cfg.TEST.SOFT_NMS
@@ -109,7 +110,7 @@ class COCODataset(JointsDataset):
         if is_train and cfg.DATASET.SELECT_DATA:
             self.db = self.select_data(self.db)
 
-        logger.info('=> load {} samples'.format(len(self.db)))
+        logger.info('=> load {} samples for {}'.format(len(self.db), self.name))
 
     def _get_ann_file_keypoint(self):
         """ self.root / annotations / person_keypoints_train2017.json """

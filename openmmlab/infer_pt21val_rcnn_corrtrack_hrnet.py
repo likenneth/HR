@@ -18,8 +18,8 @@ from pyskl.smp import mrlines
 
 DEBUG = False
 
-result_dir = "/private/home/keli22/CorrTrack/baselines/outputs/tracking_baselines/corrtrack_baseline/pose_3_stage_corr_tracking/jt_thres_0.1_duplicate_ratio_0.6_oks_0.2_corr_threshold_0.3_win_len_2_min_keypoints_2_min_track_len_3_break_tracks_True_pp_joint_threshold_0.3/sequences"
-gt_dir = "/private/home/keli22/datasets/PoseTrack21/posetrack_data/val"
+# result_dir = "/private/home/keli22/CorrTrack/baselines/outputs/tracking_baselines/corrtrack_baseline/pose_3_stage_corr_tracking/jt_thres_0.1_duplicate_ratio_0.6_oks_0.2_corr_threshold_0.3_win_len_2_min_keypoints_2_min_track_len_3_break_tracks_True_pp_joint_threshold_0.3/sequences"
+# gt_dir = "/private/home/keli22/datasets/PoseTrack21/posetrack_data/val"
 
 dataset_root = "/private/home/keli22/datasets/PoseTrack21"
 
@@ -87,6 +87,7 @@ def parse_args():
     # * the result can be used for both training & testing)
     # * All lines should take the same format.
     parser.add_argument('--json_file', type=str, required=True)
+    parser.add_argument('--opt_root', type=str, required=True)
     args = parser.parse_args()
     return args
 
@@ -99,13 +100,16 @@ def get_annos(json_file):
     for track_id in range(num_tracks):
         track_per = []
         bboxes = [_ for _ in video_annos["annotations"] if _["track_id"]==track_id]
+        # element of annotations are dict with keys: ['image_id', 'keypoints', 'scores', 'track_id', 'bbox']
         # bboxes = [_ for _ in bboxes if "bbox" in _]  # some of the bbox has "new_anno"=True, but does not have "bbox", are from propagate
         # print(bboxes[0]["image_id"], bboxes[-1]["image_id"], len(bboxes))  # we actaully need to sort it by image id, but it has been sorted
+        # for those without bbox, the [:, -1] of "keypoints" are a duplicate of "scores"
+        # for those with bbox, the [:, -1] of "keypoints" are binerized of "scores" by f x: x > 0
 
         for bbox in bboxes:
             if "bbox" not in bbox:
                 kpts = np.array(bbox["keypoints"]).reshape(17, 3)
-                visible_kpts = kpts[kpts[:, -1] > 0]  # [<=17, 3]
+                visible_kpts = kpts[kpts[:, -1] > 0]  # [<=17, 3], invisible joints have coordinates 0
                 x_min = visible_kpts[..., 0].min(axis=-1)  # []
                 x_max = visible_kpts[..., 0].max(axis=-1)  # []
                 y_min = visible_kpts[..., 1].min(axis=-1)  # []
@@ -113,8 +117,8 @@ def get_annos(json_file):
                 x1, y1, w, h = x_min, y_min, x_max - x_min, y_max - y_min
                 bbox["bbox"] = [x1.item(), y1.item(), w.item(), h.item()]
 
-            bbox.pop("keypoints")
-            bbox.pop("scores")  # pose estimates from CorrTrack are bad
+            # bbox.pop("keypoints")
+            # bbox.pop("scores")  # this score is also used for mAP calculation (why?)
             bbox["category_id"] = 1
             track_per.append(bbox)
         new_annotations.append(track_per)
@@ -124,13 +128,6 @@ def get_annos(json_file):
 def main():
     args = parse_args()
     annos = get_annos(args.json_file)  # coco format but annnotations segmented by tracks
-
-    # print(args.det_ckpt)
-    # print(args.det_config)
-    # print(type(args.det_config), type(args.det_ckpt))
-
-    # det_model = init_detector(args.det_config, args.det_ckpt, device='cuda')
-    # assert det_model.CLASSES[0] == 'person', 'A detector trained on COCO is required'
     pose_model = init_pose_model(args.pose_config, args.pose_ckpt, device='cuda')
 
     # build image index from
@@ -146,7 +143,7 @@ def main():
         det_results = []  # det_results: a T-long list of [#person_t=1, 5] with varying #person_t for each time step
         for anno in my_part:
             frames.append(extract_image(image_id2relative_path[anno["image_id"]]))
-            bbox = anno["bbox"]
+            bbox = anno["bbox"]  # bbox in format xywh, from CorrTrack
             bbox.append(1.)  # a confidence value for the API of pose_inference
             det_results.append(np.array(bbox)[None, :])
         zero_filled_bb, pose_results = pose_inference(pose_model, frames, det_results)
@@ -156,14 +153,16 @@ def main():
 
         # process returned from mmpose
         for t, anno in enumerate(my_part):
-            anno['keypoints'] = pose_results[0, t].flatten().tolist()
+            if 1 or "bbox" in anno:  # do not update if the pose is propagated
+                anno['keypoints'] = pose_results[0, t].flatten().tolist()  # a list of 51
+                anno["scores"] = pose_results[0, t, :, -1].flatten().tolist()  # a list of 17
         
         new_annotations.extend(my_part)
 
     annos["annotations"] = new_annotations
-    os.makedirs("Pt21val_RCNN_CorrTrack_HRNet", exist_ok=True)
+    os.makedirs(args.opt_root, exist_ok=True)
     video_name = osp.basename(args.json_file)
-    mmcv.dump(annos, osp.join("Pt21val_RCNN_CorrTrack_HRNet", video_name))
+    mmcv.dump(annos, osp.join(args.opt_root, video_name))
 
 
 if __name__ == '__main__':

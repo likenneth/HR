@@ -8,7 +8,7 @@ conda install seaborn
 
 Reproduce baseline:
 ```
-python tools/train.py --cfg experiments/coco/hrnet/baseline.yaml --exp coco DATASET.PARTIAL 1.0 GPUS '(0,1,2,3,4,5,6,7)'
+python tools/train.py --cfg experiments/coco/hrnet/baseline.yaml --exp coco DATASET.PARTIAL 1.0
 
 python tools/test.py --cfg experiments/coco/hrnet/baseline.yaml TEST.MODEL_FILE <some pth> TEST.USE_GT_BBOX False
 ```
@@ -22,6 +22,7 @@ Full pipeline for FineGym, Sports1M, PoseTrack21, etc.: (developed on PoseTrack)
 + With `HR/openmmlab`, infer with Swin to get a annotation file like `~/CorrTrack/baselines/data/detections/PoseTrack21_tracktor_bb_thres_0.5_val.json`
     + bbox in format xywh while mmdet gives result in xyxy
     + save to `CorrTrack/baselines/data/detections`
++ Create image annotation with like `CorrTrack/create_image_annotation.py` for CorrTrack
 + With `CorrTrack`, save down tubelets with bounding boxes, in CorrTrack format
     + 1 json for 1 video
     + 1 list element in annotations for one bbox

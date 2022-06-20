@@ -58,6 +58,7 @@ class FineGymDataset(JointsDataset):
     '''
     def __init__(self, cfg, root, image_set, is_train, transform=None):
         super().__init__(cfg, root, image_set, is_train, transform)
+        self.name = "FineGym"
         self.nms_thre = cfg.TEST.NMS_THRE
         self.image_thre = cfg.TEST.IMAGE_THRE
         self.soft_nms = cfg.TEST.SOFT_NMS
@@ -110,7 +111,7 @@ class FineGymDataset(JointsDataset):
         # if is_train and cfg.FINEGYM.SELECT_DATA:
         #     self.db = self.select_data(self.db)
 
-        logger.info('=> load {} samples'.format(len(self.db)))
+        logger.info('=> load {} samples for {}'.format(len(self.db), self.name))
 
     def load_annotation_for_action(self, action):
         tbr = []

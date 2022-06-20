@@ -44,31 +44,36 @@ class CatDataLoaders(object):
     def __init__(self, datasets, batch_sizes, cfg):
         self.dataloaders = []
         self.batch_sizes = batch_sizes
-        for dataset, batch_size in zip(datasets, batch_sizes):
+        for i, (dataset, batch_size) in enumerate(zip(datasets, batch_sizes)):
             self.dataloaders.append(
                 torch.utils.data.DataLoader(
                     dataset,
                     batch_size=batch_size*len(cfg.GPUS),
                     shuffle=cfg.TRAIN.SHUFFLE,
-                    num_workers=cfg.WORKERS // len(datasets) if cfg.WORKERS >= 0 else -1,
-                    pin_memory=cfg.PIN_MEMORY
+                    num_workers=cfg.WORKERS // len(datasets),
+                    pin_memory=cfg.PIN_MEMORY# if i == 0 else False, 
                 )
             )
+            print(f"=> {dataset.name} has {len(dataset)} perons, per-GPU batch size of {batch_size}, and {len(self.dataloaders[-1])} iters per epoch")
         print(f"=> Concatenate Dataset Created with batch size {batch_sizes} and length {len(self)}")
-
-    def __len__(self, ):
-        return len(self.dataloaders[0])
-
-    def __iter__(self):
+            
         self.loader_iter = []
         for i, data_loader in enumerate(self.dataloaders):
             if i == 0:
                 self.loader_iter.append(iter(data_loader))  # will raise StopIteration once COCO is drain, as required by __next__
             else:
-                self.loader_iter.append(itertools.cycle(iter(data_loader)))  # in case some datasets is smaller than COCO
+                self.loader_iter.append(iter(data_loader))  # TODO: now assuming additional datasets are larger
+                # done: fix memory linear increasing bug, due to the implememntation of itertools.cycle
+
+    def __len__(self, ):
+        return len(self.dataloaders[0])
+
+    def __iter__(self):
+        # in __init__ this class is already an iterator, rather than merely an iterable
         return self
 
     def __next__(self):
+        # done: additional dataset data is always at the end of the list, but for DP it should be OK
         input_ct, target_ct, target_weight_ct, meta_ct = [], [], [], []
         for data_iter in self.loader_iter:
             input, target, target_weight, meta = next(data_iter)
@@ -217,7 +222,7 @@ def main():
     )
 
     if DEBUG:
-        train_dataset = additional_trainset[0]
+        train_dataset = additional_trainset[1]
         train_loader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=cfg.TRAIN.BATCH_SIZE_PER_GPU*len(cfg.GPUS),

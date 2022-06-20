@@ -223,15 +223,15 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
             )
             if isinstance(name_values, list):
                 for name_value in name_values:
-                    for k, w in dict(name_value):
-                        writer.add_scalars(
+                    for k, w in dict(name_value).items():
+                        writer.add_scalar(
                             k,
                             w,
                             global_steps
                         )
             else:
-                for k, w in dict(name_values):
-                    writer.add_scalars(
+                for k, w in dict(name_values).items():
+                    writer.add_scalar(
                         k,
                         w,
                         global_steps
