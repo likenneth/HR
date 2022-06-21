@@ -131,6 +131,8 @@ class JointsDataset(Dataset):
             logger.error('=> fail to read {}'.format(image_file))
             raise ValueError('Fail to read {}'.format(image_file))
         if self.color_rgb:
+            # with or without it does not matter, we only need to be consistent about how model takes in data
+            # when visualizing, both Pillow and matplotlib takes in RGB, so need to convert before plotting
             data_numpy = cv2.cvtColor(data_numpy, cv2.COLOR_BGR2RGB)
 
         joints = db_rec['joints_3d']

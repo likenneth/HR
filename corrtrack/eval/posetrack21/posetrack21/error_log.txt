@@ -1,0 +1,21 @@
+PoseTrack
+val
+Traceback (most recent call last):
+  File "/private/home/keli22/CorrTrack/eval/posetrack21/posetrack21/trackeval/eval_pose.py", line 79, in evaluate
+    res[curr_seq] = eval_sequence(curr_seq, dataset, tracker, class_list, metrics_list,
+  File "/private/home/keli22/CorrTrack/eval/posetrack21/posetrack21/trackeval/_timing.py", line 16, in wrap
+    result = f(*args, **kw)
+  File "/private/home/keli22/CorrTrack/eval/posetrack21/posetrack21/trackeval/eval_pose.py", line 158, in eval_sequence
+    raw_data = dataset.get_raw_seq_data(tracker, seq)
+  File "/private/home/keli22/CorrTrack/eval/posetrack21/posetrack21/trackeval/_timing.py", line 16, in wrap
+    result = f(*args, **kw)
+  File "/private/home/keli22/CorrTrack/eval/posetrack21/posetrack21/trackeval/datasets/posetrack.py", line 437, in get_raw_seq_data
+    raw_tracker_data = self._load_raw_file(tracker, seq, is_gt=False)
+  File "/private/home/keli22/CorrTrack/eval/posetrack21/posetrack21/trackeval/datasets/posetrack.py", line 186, in _load_raw_file
+    keypoints.append(p['keypoints'])
+KeyError: 'keypoints'
+
+
+
+
+

@@ -44,7 +44,6 @@ default_pose_ckpt = 'https://download.openmmlab.com/mmpose/top_down/hrnet/hrnet_
 
 
 def extract_frame(video_path):
-
     import decord
     vid = decord.VideoReader(video_path)
     if DEBUG:

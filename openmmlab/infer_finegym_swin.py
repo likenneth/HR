@@ -99,6 +99,13 @@ def main():
     args = parse_args()
     tbd = []
     rank, world_size = args.rank, args.world_size
+    if rank == -1:
+        for i in tqdm(range(world_size)):
+            with open(osp.join("/private/home/keli22/CorrTrack/baselines/data/detections", f"FineGym_swin_bb_thres_{args.det_score_thr}_{i}from{world_size}.json"), "rb") as f:
+                ldd = json.load(f)
+            tbd.extend(ldd)
+        mmcv.dump(tbd, osp.join("/private/home/keli22/CorrTrack/baselines/data/detections", f"FineGym_swin_bb_thres_{args.det_score_thr}.json"))
+        return
     my_part = list(os.listdir(video_path))[rank::world_size]
     
     det_model = init_detector(args.det_config, args.det_ckpt, device='cuda')

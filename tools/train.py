@@ -56,20 +56,22 @@ class CatDataLoaders(object):
             )
             print(f"=> {dataset.name} has {len(dataset)} perons, per-GPU batch size of {batch_size}, and {len(self.dataloaders[-1])} iters per epoch")
         print(f"=> Concatenate Dataset Created with batch size {batch_sizes} and length {len(self)}")
-            
-        self.loader_iter = []
-        for i, data_loader in enumerate(self.dataloaders):
-            if i == 0:
-                self.loader_iter.append(iter(data_loader))  # will raise StopIteration once COCO is drain, as required by __next__
-            else:
-                self.loader_iter.append(iter(data_loader))  # TODO: now assuming additional datasets are larger
-                # done: fix memory linear increasing bug, due to the implememntation of itertools.cycle
 
     def __len__(self, ):
         return len(self.dataloaders[0])
 
     def __iter__(self):
-        # in __init__ this class is already an iterator, rather than merely an iterable
+        # any object with a __iter__() is an iterable
+        # any object with a __next__() is an iterator
+        # this object is both
+        # shuffle happens in iter(data_loader)
+        self.loader_iter = []
+        for i, data_loader in enumerate(self.dataloaders):
+            if i == 0:
+                self.loader_iter.append(iter(data_loader))  # will raise StopIteration once COCO is drain, as required by __next__
+            else:
+                self.loader_iter.append(iter(data_loader))  # TODO: now assuming additional datasets have more iterations than COCO
+                # done: fix memory linear increasing bug, due to the implememntation of itertools.cycle
         return self
 
     def __next__(self):
