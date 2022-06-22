@@ -2,9 +2,12 @@ This folder is forked from https://github.com/anDoer/PoseTrack21. Use `mm` envir
 
 ```
 cd baselines
-bash scripts/posetracking/corrtrack_wo_docker.sh 0,1,2,3,4,5,6,7
+bash scripts/posetracking/corrtrack_wo_docker.sh 0
 cd ..
+```
 
+For evaluation on PoseTrack
+```
 python eval/posetrack21/scripts/run_pose_estimation.py --GT_FOLDER ~/datasets/PoseTrack21/posetrack_data/val --TRACKERS_FOLDER baselines/outputs/tracking_baselines/corrtrack_baseline/pose_3_stage_corr_tracking/jt_thres_0.1_duplicate_ratio_0.6_oks_0.2_corr_threshold_0.3_win_len_2_min_keypoints_2_min_track_len_3_break_tracks_True_pp_joint_threshold_0.3/sequences
 ```
 <!-- python eval/posetrack21/scripts/run_mot.py --GT_FOLDER ~/datasets/PoseTrack21/posetrack_mot/mot/val --TRACKERS_FOLDER baselines/outputs/tracking_baselines/corrtrack_baseline/pose_3_stage_corr_tracking/jt_thres_0.1_duplicate_ratio_0.6_oks_0.2_corr_threshold_0.3_win_len_2_min_keypoints_2_min_track_len_3_break_tracks_True_pp_joint_threshold_0.3/sequences -->

@@ -10,7 +10,7 @@ model_urls = {
     'url': 'http://data.lip6.fr/cadene/pretrainedmodels/bn_inception-52deb4733.pth'
 }
 
-class Inception(nn.Module):
+class Inception(nn.Module):  # a CNN
     def __init__(self, out_ch=32):
         super(Inception, self).__init__()
 

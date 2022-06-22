@@ -33,7 +33,6 @@ def Refiner(in_ch, out_ch, pretrained=True):
 
 
 class Siamese(nn.Module):
-
     def __init__(self, res, local_ckpt=None):
 
         super(Siamese, self).__init__()
@@ -122,6 +121,11 @@ class Siamese(nn.Module):
         return correlations.cuda()
 
     def forward(self, x1, x2, queries=None, embeddings_only=False, correlations_only=False):
+        # has two parts, thus can be run in three modes, each xx_only disenables one of the part
+        # first it is embedding calculation
+        # second it is correlation calculation, which takes in an additional input of interest positions, becuase this module is trained to not generalize to general interest points, but only to human keypoints defined on COCO
+
+        # the input to self.get_corr_maps3x3 is two low resolution feature maps of the cropped person and the location of the keypoints in this cropped low resolution map
         if correlations_only:
             correlation_maps = self.get_corr_maps3x3(x1, x2, queries)
             refined = self.pd(torch.cat([x1, x2, correlation_maps], 1))

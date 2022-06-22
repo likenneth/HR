@@ -101,10 +101,10 @@ def main():
     rank, world_size = args.rank, args.world_size
     if rank == -1:
         for i in tqdm(range(world_size)):
-            with open(osp.join("/private/home/keli22/CorrTrack/baselines/data/detections", f"FineGym_swin_bb_thres_{args.det_score_thr}_{i}from{world_size}.json"), "rb") as f:
+            with open(osp.join("/private/home/keli22/HR/corrtrack/baselines/data/detections", f"FineGym_swin_bb_thres_{args.det_score_thr}_{i}from{world_size}.json"), "rb") as f:
                 ldd = json.load(f)
             tbd.extend(ldd)
-        mmcv.dump(tbd, osp.join("/private/home/keli22/CorrTrack/baselines/data/detections", f"FineGym_swin_bb_thres_{args.det_score_thr}.json"))
+        mmcv.dump(tbd, osp.join("/private/home/keli22/HR/corrtrack/baselines/data/detections", f"FineGym_swin_bb_thres_{args.det_score_thr}.json"))
         return
     my_part = list(os.listdir(video_path))[rank::world_size]
     
@@ -160,7 +160,7 @@ def main():
         if DEBUG:
             break
 
-    mmcv.dump(tbd, osp.join("/private/home/keli22/CorrTrack/baselines/data/detections", f"FineGym_swin_bb_thres_{args.det_score_thr}_{rank}from{world_size}.json"))
+    mmcv.dump(tbd, osp.join("/private/home/keli22/HR/corrtrack/baselines/data/detections", f"FineGym_swin_bb_thres_{args.det_score_thr}_{rank}from{world_size}.json"))
 
 
 if __name__ == '__main__':

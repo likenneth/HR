@@ -412,7 +412,6 @@ def create_new_anno(im_id, keypoints, scores, tid):
                 'new_anno': True,
                 'keypoints': keypoints,
                 'scores': scores,
-
                 }
 
     return annotation

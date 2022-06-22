@@ -22,7 +22,7 @@ flipRef = [i - 1 for i in [1, 2, 3, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14, 17
 batch_size = 96
 
 class Sequence:
-
+    # dataset for one video
     def __init__(self, anno, data_path):
 
         self.anno = anno
@@ -169,8 +169,10 @@ def correspondence_boxes(corr_ckpt_path,
         Seq_loader = DataLoader(Seq, 
                                 batch_size=batch_size, 
                                 shuffle=False, 
-                                num_workers=8)
-        features = []
+                                num_workers=8)  # dataloader for one video, output 96 frames per batch
+
+        # Lopp 1: extract frame features of each frame 
+        features = []  # length =  length of the current video 
         metadata = []
         images = []
         images_orig = []
@@ -190,9 +192,10 @@ def correspondence_boxes(corr_ckpt_path,
                 f, _ = model(inputs, 
                              inputs, 
                              queries=None,  
-                             embeddings_only=True)
+                             embeddings_only=True, 
+                             correlations_only=False)  # just to run the first part of the network, extract CNN feature
 
-                N = images_batch.shape[0]
+                N = images_batch.shape[0]  # size of current batch
                 for n in range(N):
                     metadata.append([
                         keypoints[n].numpy(), 
@@ -206,8 +209,10 @@ def correspondence_boxes(corr_ckpt_path,
                     images.append(images_batch[n])
                     images_orig.append(img_orig[n])
 
+
+        # Loop 2: calculate the correlations between neighboring frames
         print('Computing correlations')
-        N = len(features)
+        N = len(features)  # this N is the length of the whole video
         new_annos_seq = []
 
         for n in tqdm(range(1, N)):
@@ -233,14 +238,14 @@ def correspondence_boxes(corr_ckpt_path,
                 fA = fA.view(1, 32, res_h, res_w)
 
                 with torch.no_grad():
-                    output = model(fA, 
-                                   features[n].view(1, 32, res_h, res_w), 
-                                   queries, 
-                                   False, 
-                                   True)
+                    output = model(fA, # feature from the previous frame
+                                   features[n].view(1, 32, res_h, res_w), # mid-layer CNN resolution
+                                   queries,  # interested points to calcualte correlation
+                                   embeddings_only=False, 
+                                   correlations_only=True)  # False, True means only run the second part of the model, only correlation
 
                     correlations = torch.sigmoid(output)
-                    correlations2 = correlations.view(1, 17, res_h * res_w).data.cpu()
+                    correlations2 = correlations.view(1, 17, res_h * res_w).data.cpu()  # of the same shape as the mid-layer CNN feature
                     val_k, ind = correlations2.topk(1, dim=2)
                     xs = ind % res_w
                     ys = (ind / res_w).long()
@@ -252,7 +257,7 @@ def correspondence_boxes(corr_ckpt_path,
                                                                         joint_threshold,
                                                                         corr_threshold,
                                                                         [network_res[0] * 4, network_res[1] * 4],
-                                                                        min_kpts=min_kpts)
+                                                                        min_kpts=min_kpts)  # poses are discarded here, all temporal continuity info lost!
 
                     if bbs[0][0] == 0 and bbs[0][1] == 0:
                         continue
@@ -263,6 +268,7 @@ def correspondence_boxes(corr_ckpt_path,
                     centers_im.append(centres[0])
                     track_ids_im.append(track_ids_prev[k])
 
+            # for all bboxes calculated by get_pose_from_correspondences(), redo the pose estimation
             if len(boxes_im) > 0:
 
                 warps_im = create_warps(boxes_im, pose_output_size)
@@ -273,6 +279,7 @@ def correspondence_boxes(corr_ckpt_path,
                 inp_images = []
 
                 for i, w in enumerate(warps_im):
+                    # do a manual flip test, prepare the data to feed the model
                     inp_img = images[n].permute(1, 2, 0).numpy()
 
                     im_cv = cv.warpAffine(inp_img, w[0:2, :],
@@ -302,6 +309,7 @@ def correspondence_boxes(corr_ckpt_path,
                     outputf = torch.sigmoid(outputf[1][:, 0:17])
                     outputf = outputf.data.cpu()
 
+                # aggregate the test, these are all implemented very well in the MMPose
                 for i, w_inv in enumerate(warps_inv):
                     prs = torch.zeros(17, pose_output_size[1] // 4, pose_output_size[0] // 4)
                     outputflip = outputf[i]

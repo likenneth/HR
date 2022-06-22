@@ -15,16 +15,16 @@ USERNAME=keli22
 SRC_DIR="$PWD"
 
 EXPERIMENT_FOLDER_NAME=corrtrack_swin_env_debug
-EXP=test
+EXP=train
 
 # container paths
 MODEL_DIR="$PWD/data/models/"
 DATA_DIR="$PWD/data/detections/"
 
 POSE_ESTIMATION_MODEL_PATH="$MODEL_DIR/pose_estimation_model_3_stage_lr_1e-5_wo_vis.pth"
-DATASET_PATH="/private/home/$USERNAME/datasets/PoseTrack21/"
+DATASET_PATH="/private/home/$USERNAME/datasets/FineGym/"
 CORR_MODEL_PATH="$MODEL_DIR/corrtrack_model.pth"
-BBOX_ANNOTATION_FILE_PATH="$DATA_DIR/PoseTrack21_swin_bb_thres_0.5_$EXP.json"
+BBOX_ANNOTATION_FILE_PATH="$DATA_DIR/FineGym_swin_bb_thres_0.5.json"
 
 NUM_POSE_STAGES=3
 
@@ -37,22 +37,22 @@ REFINED_POSES_FOLDER=pose_3_stage_warped_and_refined
 REFINED_POSE_NMS_FOLDER=pose_3_stage_refined_nms
 CORR_TRACKING_FOLDER=pose_3_stage_corr_tracking
 
-# # 1) pose estimation
-# # run single-person pose estimation on a given person bbox file (does the detection step contain NMS with IOU?)
-# echo "RUN POSE ESTIMATION"
-# CUDA_VISIBLE_DEVICES=$1 PYTHONPATH=$PWD \
-# python corrtrack/inference/pose_estimation.py \
-# --save_path=${INFERENCE_FOLDER_PATH}/${EXPERIMENT_FOLDER_NAME}/${POSE_FOLDER}/sequences/ \
-# --dataset_path=${DATASET_PATH} \
-# --prefix=$EXP \
-# --annotation_file_path=${BBOX_ANNOTATION_FILE_PATH} \
-# --checkpoint_path=${POSE_ESTIMATION_MODEL_PATH} \
-# --joint_threshold=0.0 \
-# --output_size_x=288 \
-# --output_size_y=384 \
-# --num_stages=${NUM_POSE_STAGES} \
-# --batch_size=128 \
-# --num_workers=20
+# 1) pose estimation
+# run single-person pose estimation on a given person bbox file (does the detection step contain NMS with IOU?)
+echo "RUN POSE ESTIMATION"
+CUDA_VISIBLE_DEVICES=$1 PYTHONPATH=$PWD \
+python corrtrack/inference/pose_estimation.py \
+--save_path=${INFERENCE_FOLDER_PATH}/${EXPERIMENT_FOLDER_NAME}/${POSE_FOLDER}/sequences/ \
+--dataset_path=${DATASET_PATH} \
+--prefix=$EXP \
+--annotation_file_path=${BBOX_ANNOTATION_FILE_PATH} \
+--checkpoint_path=${POSE_ESTIMATION_MODEL_PATH} \
+--joint_threshold=0.0 \
+--output_size_x=288 \
+--output_size_y=384 \
+--num_stages=${NUM_POSE_STAGES} \
+--batch_size=128 \
+--num_workers=20
 
 # # 2) nms, CPU-only
 # # remove redundent persons by NMS with OKS
@@ -64,21 +64,21 @@ CORR_TRACKING_FOLDER=pose_3_stage_corr_tracking
 # --joint_threshold=0.05 \
 # --oks_threshold=0.7
 
-# 3) pose warping, multi-GPU has some bug when batch size <= number of GPU
-# propagate all the poses from f-1 to f, using Siamese network and the PoseNet to reestimate the pose
-echo "RUN WARPING"
-CUDA_VISIBLE_DEVICES=$1 PYTHONPATH=$PWD \
-python corrtrack/inference/warp_poses.py \
---corr_ckpt_path=${CORR_MODEL_PATH} \
---pose_ckpt_path=${POSE_ESTIMATION_MODEL_PATH} \
---num_stages=${NUM_POSE_STAGES} \
---sequences_path=${INFERENCE_FOLDER_PATH}/${EXPERIMENT_FOLDER_NAME}/${POSE_NMS_FOLDER}/jt_0.05_oks_0.7_3_stage/sequences/ \
---save_path=${INFERENCE_FOLDER_PATH}/${EXPERIMENT_FOLDER_NAME}/${WARPED_POSE_FOLDER} \
---dataset_path=${DATASET_PATH} \
---oks_threshold=0.8 \
---corr_threshold=0.1 \
---joint_threshold=0.1 \
---bb_thres=0.5
+# # 3) pose warping, multi-GPU has some bug when batch size <= number of GPU
+# # propagate all the poses from f-1 to f, using Siamese network, and use PoseNet to reestimate the pose
+# echo "RUN WARPING"
+# CUDA_VISIBLE_DEVICES=$1 PYTHONPATH=$PWD \
+# python corrtrack/inference/warp_poses.py \
+# --corr_ckpt_path=${CORR_MODEL_PATH} \
+# --pose_ckpt_path=${POSE_ESTIMATION_MODEL_PATH} \
+# --num_stages=${NUM_POSE_STAGES} \
+# --sequences_path=${INFERENCE_FOLDER_PATH}/${EXPERIMENT_FOLDER_NAME}/${POSE_NMS_FOLDER}/jt_0.05_oks_0.7_3_stage/sequences/ \
+# --save_path=${INFERENCE_FOLDER_PATH}/${EXPERIMENT_FOLDER_NAME}/${WARPED_POSE_FOLDER} \
+# --dataset_path=${DATASET_PATH} \
+# --oks_threshold=0.8 \
+# --corr_threshold=0.1 \
+# --joint_threshold=0.1 \
+# --bb_thres=0.5
 
 # # 4) recovering missed detections, CPU-only
 # # for all new pose, if OKS being not too high to any old poses, add it

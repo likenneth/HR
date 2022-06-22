@@ -105,8 +105,11 @@ def get_annos(json_file):
         # print(bboxes[0]["image_id"], bboxes[-1]["image_id"], len(bboxes))  # we actaully need to sort it by image id, but it has been sorted
         # for those without bbox, the [:, -1] of "keypoints" are a duplicate of "scores"
         # for those with bbox, the [:, -1] of "keypoints" are binerized of "scores" by f x: x > 0
-
+        if DEBUG:
+           print(f"For track {track_id}")
         for bbox in bboxes:
+            if DEBUG:
+                print(bbox["image_id"])
             if "bbox" not in bbox:
                 kpts = np.array(bbox["keypoints"]).reshape(17, 3)
                 visible_kpts = kpts[kpts[:, -1] > 0]  # [<=17, 3], invisible joints have coordinates 0
