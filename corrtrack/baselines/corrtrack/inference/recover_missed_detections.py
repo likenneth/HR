@@ -8,6 +8,7 @@ import argparse
 from common.utils.pose_refine_utils import compute_OKS_PoseTrack_tracking, get_max_oks
 from tqdm import tqdm
 
+
 def bounding_box_from_pose(x, y, s, th):
     valid = s > th
 
@@ -21,6 +22,7 @@ def bounding_box_from_pose(x, y, s, th):
     a = w * h
 
     return a
+
 
 def get_images(anno):
     images = {}
@@ -86,7 +88,8 @@ def get_new_annos(dets, joint_thres, oks_thres):
                 dts.append(dt)
 
                 if num_valid > 2:
-                    OKS = compute_OKS_PoseTrack_tracking(np.array(gt), np.array(dt), joint_thres)
+                    OKS = compute_OKS_PoseTrack_tracking(
+                        np.array(gt), np.array(dt), joint_thres)
                 else:
                     OKS = 0
 
@@ -101,17 +104,22 @@ def get_new_annos(dets, joint_thres, oks_thres):
 
 def recover_missed_detections(sequences_path, save_path, OKS_th, joint_th):
     sequences = os.listdir(sequences_path)
-    seq_save_path = os.path.join(save_path, 
-                                 'recover_missed_detections_jt_th_{}_oks_{}/sequences/'.format(joint_th, OKS_th))
+    seq_save_path = os.path.join(save_path,
+                                 'recover_missed_detections_jt_th_{}_oks_{}/'.format(joint_th, OKS_th))
     os.makedirs(seq_save_path, exist_ok=True)
     start_time = time.time()
     counter = 0
 
     for seq_id, seq in enumerate(sequences):
-        print('Processing Seq : ' + str(seq_id))
-
-        with open(sequences_path + seq, 'r') as f:
-            anno = json.load(f)
+        # print('Processing Seq : ' + str(seq_id))
+        if os.path.exists(seq_save_path + seq):
+            continue
+        try:
+            with open(sequences_path + seq, 'r') as f:
+                anno = json.load(f)
+        except:
+            os.remove(sequences_path + seq)
+            print(f"{seq} removed!")
 
         new_annos_seq = []
         for ann in anno['annotations']:
@@ -119,7 +127,7 @@ def recover_missed_detections(sequences_path, save_path, OKS_th, joint_th):
                 continue
             new_annos_seq.append(ann)
 
-        print('Old annos : ' + str(len(new_annos_seq)))
+        # print('Old annos : ' + str(len(new_annos_seq)))
 
         image_infos = {img['id']: img['file_name'] for img in anno['images']}
 
@@ -133,13 +141,14 @@ def recover_missed_detections(sequences_path, save_path, OKS_th, joint_th):
             for ann in new_annos:
                 new_annos_seq.append(ann)
 
-        print("New annos {}".format(new_annos_c))
+        # print("New annos {}".format(new_annos_c))
 
         anno['annotations'] = new_annos_seq
         with open(seq_save_path + seq, 'w') as outfile:
             json.dump(anno, outfile)
 
-    print('total time : ' + str(time.time() - start_time))
+    # print('total time : ' + str(time.time() - start_time))
+
 
 if __name__ == '__main__':
 
@@ -147,12 +156,12 @@ if __name__ == '__main__':
     parser.add_argument('--sequences_path', type=str,   required=True)
     parser.add_argument('--save_path',      type=str,   required=True)
     parser.add_argument('--oks',            type=float, default=0.6)
-    parser.add_argument('--warp_oks',       type=float, default=0.8)
+    # parser.add_argument('--warp_oks',       type=float, default=0.8)
     parser.add_argument('--joint_th',       type=float, default=0.1)
 
     args = parser.parse_args()
 
-    recover_missed_detections(args.sequences_path, 
-                              args.save_path, 
-                              args.oks, 
+    recover_missed_detections(args.sequences_path,
+                              args.save_path,
+                              args.oks,
                               args.joint_th)

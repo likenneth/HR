@@ -10,10 +10,6 @@ import cv2
 # import decord, cause segmentation fault if imported too early
 import mmcv
 import numpy as np
-import ipdb
-from tqdm import tqdm
-
-from pyskl.smp import mrlines
 
 DEBUG = False
 
@@ -89,8 +85,7 @@ def parse_args():
     # * 2. "xxx.mp4 label" ('label' is an integer (category index),
     # * the result can be used for both training & testing)
     # * All lines should take the same format.
-    parser.add_argument('--rank', type=int, required=True)
-    parser.add_argument('--world-size', type=int, required=True)
+    parser.add_argument('--video', type=str, required=True)
 
     args = parser.parse_args()
     return args
@@ -98,69 +93,64 @@ def parse_args():
 def main():
     args = parse_args()
     tbd = []
-    rank, world_size = args.rank, args.world_size
-    if rank == -1:
-        for i in tqdm(range(world_size)):
-            with open(osp.join("/private/home/keli22/HR/corrtrack/baselines/data/detections", f"FineGym_swin_bb_thres_{args.det_score_thr}_{i}from{world_size}.json"), "rb") as f:
-                ldd = json.load(f)
-            tbd.extend(ldd)
-        mmcv.dump(tbd, osp.join("/private/home/keli22/HR/corrtrack/baselines/data/detections", f"FineGym_swin_bb_thres_{args.det_score_thr}.json"))
-        return
-    my_part = list(os.listdir(video_path))[rank::world_size]
+    frame_dir = args.video
+    video_name = osp.basename(frame_dir[:-1])
+
+    # if rank == -1:
+    #     for i in tqdm(range(world_size)):
+    #         with open(osp.join("/private/home/keli22/HR/corrtrack/baselines/data/detections", f"FineGym_swin_bb_thres_{args.det_score_thr}_{i}from{world_size}.json"), "rb") as f:
+    #             ldd = json.load(f)
+    #         tbd.extend(ldd)
+    #     mmcv.dump(tbd, osp.join("/private/home/keli22/HR/corrtrack/baselines/data/detections", f"FineGym_swin_bb_thres_{args.det_score_thr}.json"))
+    #     return
+    # my_part = list(os.listdir(video_path))[rank::world_size]
     
     det_model = init_detector(args.det_config, args.det_ckpt, device='cuda')
     assert det_model.CLASSES[0] == 'person', 'A detector trained on COCO is required'
     # pose_model = init_pose_model(args.pose_config, args.pose_ckpt, device='cuda')
 
-    for vidx, video_name in enumerate(tqdm(my_part)):
+    frames = list(os.listdir(frame_dir))
+    video_level_info = {
+        "keypoints": [], 
+        "file_id": video_name + ".json",
+        "seq_name": video_name, 
+        "tot_frames": len(frames), 
+        "track_id": -1, 
+        "vid_id": video_name, 
+    }
 
-        frames = list(os.listdir(osp.join(video_path, video_name)))
-        if DEBUG:
-            frames = frames[:2]
-        # vid_id = video_name.split("_")[0]  # str
-        video_level_info = {
-            "keypoints": [], 
-            "file_id": video_name + ".json",
-            "seq_name": video_name, 
-            "tot_frames": len(frames), 
-            "track_id": -1, 
-            "vid_id": video_name, 
+    for frame_file_name in frames:
+        try:
+            frame_id = int(frame_file_name.split(".")[0])
+        except:
+            print(osp.join(video_path, video_name), frame_file_name)
+        frame_level_info = {
+            "frame_idx": frame_id, 
+            "image_location": f"processed_frames/{video_name}/{frame_file_name}", 
+            "img": f"{video_name}_{frame_id:03}"
         }
-
-        for frame_file_name in frames:
-            try:
-                frame_id = int(frame_file_name.split(".")[0])
-            except:
-                print(osp.join(video_path, video_name), frame_file_name)
-            frame_level_info = {
-                "frame_idx": frame_id, 
-                "image_location": f"processed_frames/{video_name}/{frame_file_name}", 
-                "img": f"{video_name}_{frame_id:03}"
+        img = extract_image(osp.join(video_path, video_name, frame_file_name))
+        res = inference_detector(det_model, img)[0][0]  # [#person_t, 5] with varying #person_t for each time step
+        res = res[res[:, 4] >= args.det_score_thr]
+        box_areas = (res[:, 3] - res[:, 1]) * (res[:, 2] - res[:, 0])  # in xyxy format
+        assert np.all(box_areas >= 0)
+        res = res[box_areas >= args.det_area_thr]
+        # xyxy to xywh
+        w = res[:, 2] - res[:, 0]
+        h = res[:, 3] - res[:, 1]
+        res[:, 2] = w
+        res[:, 3] = h
+        
+        for pidx in range(res.shape[0]):
+            person_level_info = {
+                "bbox": list(res[pidx]), 
+                'bbox_score': res[pidx, -1].item(), 
             }
-            img = extract_image(osp.join(video_path, video_name, frame_file_name))
-            res = inference_detector(det_model, img)[0][0]  # [#person_t, 5] with varying #person_t for each time step
-            res = res[res[:, 4] >= args.det_score_thr]
-            box_areas = (res[:, 3] - res[:, 1]) * (res[:, 2] - res[:, 0])  # in xyxy format
-            assert np.all(box_areas >= 0)
-            res = res[box_areas >= args.det_area_thr]
-            # xyxy to xywh
-            w = res[:, 2] - res[:, 0]
-            h = res[:, 3] - res[:, 1]
-            res[:, 2] = w
-            res[:, 3] = h
-            
-            for pidx in range(res.shape[0]):
-                person_level_info = {
-                    "bbox": list(res[pidx]), 
-                    'bbox_score': res[pidx, -1].item(), 
-                }
-                person_level_info.update(frame_level_info)
-                person_level_info.update(video_level_info)
-                tbd.append(person_level_info)
-        if DEBUG:
-            break
+            person_level_info.update(frame_level_info)
+            person_level_info.update(video_level_info)
+            tbd.append(person_level_info)
 
-    mmcv.dump(tbd, osp.join("/private/home/keli22/HR/corrtrack/baselines/data/detections", f"FineGym_swin_bb_thres_{args.det_score_thr}_{rank}from{world_size}.json"))
+    mmcv.dump(tbd, osp.join(f"/private/home/keli22/HR/corrtrack/baselines/data/detections/FineGym_swin_bb_thres_{args.det_score_thr}", f"{video_name}.json"))
 
 
 if __name__ == '__main__':

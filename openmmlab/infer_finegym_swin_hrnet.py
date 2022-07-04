@@ -101,46 +101,52 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def get_annos():
-    with open("/private/home/keli22/datasets/FineGym/finegym_annotation_info_v1.1.json", "r") as f:
-        gym_annot = json.load(f)
-    action_list = []
-    for video, events in gym_annot.items():
-        for event, event_details in events.items():
-            if event_details["segments"]:
-                for action, action_details in event_details["segments"].items():
-                    relative_time_stamp = [action_details["timestamps"][0][0], action_details["timestamps"][-1][-1]]  # relative to events
-                    fps = 25
-                    s = round(relative_time_stamp[0] * fps)
-                    e = round(relative_time_stamp[1] * fps)
-                    if e <= s:
-                        continue
-                    action_list.append(
-                        {
-                            "video_path": os.path.join(video_path, f"{video}_{event}.mp4"), 
-                            "time_stamp": relative_time_stamp, 
-                            "action_name": f"{video}_{event}_{action}", 
-                        }
-                    )
+# def get_annos():
+#     with open("/private/home/keli22/datasets/FineGym/finegym_annotation_info_v1.1.json", "r") as f:
+#         gym_annot = json.load(f)
+#     action_list = []
+#     for video, events in gym_annot.items():
+#         for event, event_details in events.items():
+#             if event_details["segments"]:
+#                 for action, action_details in event_details["segments"].items():
+#                     relative_time_stamp = [action_details["timestamps"][0][0], action_details["timestamps"][-1][-1]]  # relative to events
+#                     fps = 25
+#                     s = round(relative_time_stamp[0] * fps)
+#                     e = round(relative_time_stamp[1] * fps)
+#                     if e <= s:
+#                         continue
+#                     action_list.append(
+#                         {
+#                             "video_path": os.path.join(video_path, f"{video}_{event}.mp4"), 
+#                             "time_stamp": relative_time_stamp, 
+#                             "action_name": f"{video}_{event}_{action}", 
+#                         }
+#                     )
 
-    return action_list
+#     return action_list
 
 def main():
     args = parse_args()
     rank, world_size = args.rank, args.world_size
-    annos = get_annos()
+    if osp.exists(osp.join("FullFineGym_Swin_HRNet", f'res_{rank}outof{world_size}.pkl')):
+        return
 
+    annos = sorted(list(os.listdir(video_path)))
     my_part = annos[rank::world_size]
 
     det_model = init_detector(args.det_config, args.det_ckpt, device='cuda')
     assert det_model.CLASSES[0] == 'person', 'A detector trained on COCO is required'
     pose_model = init_pose_model(args.pose_config, args.pose_ckpt, device='cuda')
 
-    for anno in tqdm(my_part):
-        fps = 25
-        s = round(anno['time_stamp'][0] * fps)
-        e = round(anno['time_stamp'][1] * fps)
-        frames = extract_frame(anno['video_path'])[s:e+1]
+    for video_name in tqdm(my_part):
+        anno = {
+            "video_path": os.path.join(video_path, video_name), 
+            "action_name": video_name.split(".")[0], 
+        }
+        # fps = 25
+        # s = round(anno['time_stamp'][0] * fps)
+        # e = round(anno['time_stamp'][1] * fps)
+        frames = extract_frame(os.path.join(video_path, video_name))#[s:e+1]
         det_results_ = detection_inference(det_model, frames)  # det_results_: a T-long list
         # * Get detection results for human
         det_results = [x[0][0] for x in det_results_]  # x: a tuple for (detection, segmentation) result; x[0], a 80-long list of np.array of shape 10*5; for each image; 80 = #cls
@@ -169,8 +175,8 @@ def main():
         anno['keypoint_score'] = pose_results[..., 2]#.astype(np.float16)
         anno.pop('video_path')
 
-    os.makedirs("FineGym_Swin_HRNet", exist_ok=True) 
-    mmcv.dump(my_part, osp.join("FineGym_Swin_HRNet", f'res_{rank}outof{world_size}.pkl'))
+    os.makedirs("FullFineGym_Swin_HRNet", exist_ok=True) 
+    mmcv.dump(my_part, osp.join("FullFineGym_Swin_HRNet", f'res_{rank}outof{world_size}.pkl'))
 
 if __name__ == '__main__':
     main()

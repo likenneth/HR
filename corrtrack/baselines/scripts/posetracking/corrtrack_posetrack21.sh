@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # $PWD should be ~/PoseTrack21Release/baselines
-# bash scripts/posetracking/corrtrack_wo_docker.sh 0,1,2,3,4,5,6,7
-# srun --job-name=corr_test --cpus-per-task=32 --gpus-per-node=1 --nodes=1 --ntasks=1 --time=2-00:00:00 --partition=learnfair bash scripts/posetracking/corrtrack_wo_docker.sh 0 &
+# bash scripts/posetracking/corrtrack_posetrack21.sh 0,1,2,3,4,5,6,7
+# srun --job-name=corr_test --cpus-per-task=32 --gpus-per-node=1 --nodes=1 --ntasks=1 --time=2-00:00:00 --partition=learnfair bash scripts/posetracking/corrtrack_posetrack21.sh 0 &
 
 # # build contaienr
 # cd $PWD/docker
@@ -14,7 +14,7 @@ USERNAME=keli22
 # host paths
 SRC_DIR="$PWD"
 
-EXPERIMENT_FOLDER_NAME=corrtrack_swin_env_debug
+EXPERIMENT_FOLDER_NAME=corrtrack_swin
 EXP=train
 
 # container paths
@@ -22,9 +22,9 @@ MODEL_DIR="$PWD/data/models/"
 DATA_DIR="$PWD/data/detections/"
 
 POSE_ESTIMATION_MODEL_PATH="$MODEL_DIR/pose_estimation_model_3_stage_lr_1e-5_wo_vis.pth"
-DATASET_PATH="/private/home/$USERNAME/datasets/FineGym/"
+DATASET_PATH="/private/home/$USERNAME/datasets/PoseTrack21/"
 CORR_MODEL_PATH="$MODEL_DIR/corrtrack_model.pth"
-BBOX_ANNOTATION_FILE_PATH="$DATA_DIR/FineGym_swin_bb_thres_0.5.json"
+BBOX_ANNOTATION_FILE_PATH="$DATA_DIR/PoseTrack21_swin_bb_thres_0.5_$EXP.json"
 
 NUM_POSE_STAGES=3
 

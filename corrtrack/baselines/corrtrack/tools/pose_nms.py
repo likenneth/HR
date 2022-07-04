@@ -1,3 +1,6 @@
+import sys
+sys.path.insert(0, '/private/home/keli22/HR/corrtrack/baselines')
+
 import numpy as np
 import os
 import json
@@ -38,6 +41,9 @@ def perform_pose_nms(result_path,
 
     seq_files = os.listdir(result_path)
     for seq_file in seq_files:
+        if os.path.exists(os.path.join(save_path, seq_file)):
+            continue
+
         refined_annos = []
         with open(os.path.join(result_path, seq_file), 'r') as f:
             annos = json.load(f)
@@ -83,7 +89,7 @@ if __name__ == '__main__':
     parser.add_argument('--oks_threshold', type=float, default=0.7)
     args = parser.parse_args()
 
-    save_path = os.path.join(args.save_path, 'jt_{}_oks_{}_3_stage/sequences/')
+    save_path = os.path.join(args.save_path, 'jt_{}_oks_{}/')
     joint_threshold = args.joint_threshold
     oks_thres = args.oks_threshold
 

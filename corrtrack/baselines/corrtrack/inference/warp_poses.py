@@ -1,25 +1,28 @@
-import json
-import random
-import os
-import torch
-import matplotlib.pyplot as plt
-import time
-import argparse
-import cv2 as cv
+import sys
+sys.path.insert(0, '/private/home/keli22/HR/corrtrack/baselines')
 
-import torch.backends.cudnn as cudnn
-
-from torch.utils.data import Dataset, DataLoader
-from torch.nn import DataParallel
-from tqdm import tqdm
-
-from common.utils.pose_refine_utils import *
-from models.correspondences.siamese_refinement_model import Siamese
 from models.pose_estimation.bn_inception2 import bninception
+from models.correspondences.siamese_refinement_model import Siamese
+from common.utils.pose_refine_utils import *
+from tqdm import tqdm
+from torch.nn import DataParallel
+from torch.utils.data import Dataset, DataLoader
+import torch.backends.cudnn as cudnn
+import cv2 as cv
+import argparse
+import time
+import matplotlib.pyplot as plt
+import torch
+import os
+import random
+import json
 
-flipRef = [i - 1 for i in [1, 2, 3, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14, 17, 16]]
-        
+
+flipRef = [i - 1 for i in [1, 2, 3, 5, 4, 7,
+                           6, 9, 8, 11, 10, 13, 12, 15, 14, 17, 16]]
+
 batch_size = 96
+
 
 class Sequence:
     # dataset for one video
@@ -50,15 +53,15 @@ class Sequence:
         height, width = img_orig.shape[:2]
         crop_pos = [width // 2, height // 2]
         max_d = max(height, width)
-        scales = [self.output_size[0] / float(max_d), 
+        scales = [self.output_size[0] / float(max_d),
                   self.output_size[0] / float(max_d)]
 
-        t_form = create_warp_matrix(self.output_size, 
-                                    crop_pos, 
+        t_form = create_warp_matrix(self.output_size,
+                                    crop_pos,
                                     scales)
 
-        im_cv = cv.warpAffine(img_orig, 
-                              t_form[0:2, :], 
+        im_cv = cv.warpAffine(img_orig,
+                              t_form[0:2, :],
                               (self.output_size[0], self.output_size[1]))
         img = cv.cvtColor(im_cv, cv.COLOR_BGR2RGB)
         img = torch.from_numpy(img).float()
@@ -82,25 +85,25 @@ class Sequence:
                 joints_orig[i] = torch.from_numpy(joints[:2, :])
                 joints_warped = np.matmul(t_form, joints)
                 joints_image[i, :2, :] = torch.from_numpy(joints_warped[:2, :])
-                joints_image[i, 2, :] = torch.from_numpy(np.array(det['scores']))
+                joints_image[i, 2, :] = torch.from_numpy(
+                    np.array(det['scores']))
                 track_ids[i] = det['track_id']
 
-        return (img, 
-                t_form, 
-                joints_image, 
-                im['id'], 
-                total_instances, 
-                img_orig, 
-                joints_orig, 
+        return (img,
+                t_form,
+                joints_image,
+                im['id'],
+                total_instances,
+                img_orig,
+                joints_orig,
                 track_ids)
 
 
 def correspondence_boxes(corr_ckpt_path,
                          pose_ckpt_path,
-                         sequences_path,
-                         save_path,
+                         sequences_path,  # a full path to the json in result dir, as input
+                         seq_save_path,
                          dataset_path,
-                         bb_thres,
                          joint_threshold,
                          corr_threshold,
                          oks_threshold,
@@ -112,14 +115,6 @@ def correspondence_boxes(corr_ckpt_path,
     cudnn.deterministic = False
     cudnn.enabled = True
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    seq_save_path = os.path.join(
-        save_path, 'val_set_bb_{}_jt_{}_with_corr_{}_at_oks_{}/sequences/'.format(bb_thres,
-                                                                                  joint_threshold,
-                                                                                  corr_threshold,
-                                                                                  oks_threshold))
-
-    os.makedirs(seq_save_path, exist_ok=True)
 
     poseNet = Siamese(res=128)
     model = DataParallel(poseNet)
@@ -149,215 +144,217 @@ def correspondence_boxes(corr_ckpt_path,
     poseNet2.to(device)
     model2.eval()
 
-    sequences = os.listdir(sequences_path)
-    total_sequences = len(sequences)
+    seq = os.path.basename(sequences_path)  # with .json
     res_h = network_res[1]
     res_w = network_res[0]
 
     start_time = time.time()
     total_added = 0
 
-    for seq_id, seq in enumerate(sequences):
+    with open(sequences_path, 'r') as f:
+        anno = json.load(f)
 
-        with open(sequences_path + seq, 'r') as f:
-            anno = json.load(f)
+    print('Pre-processing')
 
-        print('Sequence : ' + str(seq_id) + '/' + str(total_sequences))
-        print('Pre-processing')
+    Seq = Sequence(anno, dataset_path)
+    Seq_loader = DataLoader(Seq,
+                            batch_size=batch_size,
+                            shuffle=False,
+                            num_workers=8)  # dataloader for one video, output 96 frames per batch
 
-        Seq = Sequence(anno, dataset_path)
-        Seq_loader = DataLoader(Seq, 
-                                batch_size=batch_size, 
-                                shuffle=False, 
-                                num_workers=8)  # dataloader for one video, output 96 frames per batch
+    # Lopp 1: extract frame features of each frame
+    features = []  # length =  length of the current video
+    metadata = []
+    images = []
+    images_orig = []
 
-        # Lopp 1: extract frame features of each frame 
-        features = []  # length =  length of the current video 
-        metadata = []
-        images = []
-        images_orig = []
+    for _, (images_batch,
+            warps,
+            keypoints,
+            im_ids,
+            N_ins,
+            img_orig,
+            joints_orig,
+            track_ids) in enumerate(tqdm(Seq_loader)):
 
-        for _, (images_batch, 
-                warps, 
-                keypoints, 
-                im_ids, 
-                N_ins, 
-                img_orig, 
-                joints_orig, 
-                track_ids) in enumerate(tqdm(Seq_loader)):
+        with torch.no_grad():
+            inputs = images_batch.to(device)
+            f, _ = model(inputs,
+                         inputs,
+                         queries=None,
+                         embeddings_only=True,
+                         correlations_only=False)  # just to run the first part of the network, extract CNN feature
+
+            N = images_batch.shape[0]  # size of current batch
+            for n in range(N):
+                metadata.append([
+                    keypoints[n].numpy(),
+                    im_ids[n],  # .item(),
+                    warps[n],
+                    N_ins[n].item(),
+                    joints_orig[n],
+                    track_ids[n]
+                ])
+                features.append(f[n])
+                images.append(images_batch[n])
+                images_orig.append(img_orig[n])
+
+    # Loop 2: calculate the correlations between neighboring frames
+    print('Computing correlations')
+    N = len(features)  # this N is the length of the whole video
+    new_annos_seq = []
+
+    for n in tqdm(range(1, N)):
+        prevdata = metadata[n-1]
+        keypoints_all = prevdata[0]
+        boxes_im = []
+        centers_im = []
+        N_ins_im = prevdata[3]
+        track_ids_prev = prevdata[5]
+        track_ids_im = []
+
+        for k in range(N_ins_im):
+            keypoints = keypoints_all[k]
+            if int(keypoints[2, :].sum()) == -17:
+                continue
+
+            queries = np.zeros((1, 17, 3))
+            queries[0, :, 0] = (keypoints[1, :] / 4).astype(np.uint)
+            queries[0, :, 1] = (keypoints[0, :] / 4).astype(np.uint)
+            queries[0, :, 2] = keypoints[2, :]
+
+            fA = features[n-1]
+            fA = fA.view(1, 32, res_h, res_w)
 
             with torch.no_grad():
-                inputs = images_batch.to(device)
-                print(inputs.shape)
-                f, _ = model(inputs, 
-                             inputs, 
-                             queries=None,  
-                             embeddings_only=True, 
-                             correlations_only=False)  # just to run the first part of the network, extract CNN feature
+                output = model(fA,  # feature from the previous frame
+                               # mid-layer CNN resolution
+                               features[n].view(1, 32, res_h, res_w),
+                               queries,  # interested points to calcualte correlation
+                               embeddings_only=False,
+                               correlations_only=True)  # False, True means only run the second part of the model, only correlation
 
-                N = images_batch.shape[0]  # size of current batch
-                for n in range(N):
-                    metadata.append([
-                        keypoints[n].numpy(), 
-                        im_ids[n].item(), 
-                        warps[n],
-                        N_ins[n].item(), 
-                        joints_orig[n], 
-                        track_ids[n]
-                    ])
-                    features.append(f[n])
-                    images.append(images_batch[n])
-                    images_orig.append(img_orig[n])
+                correlations = torch.sigmoid(output)
+                # of the same shape as the mid-layer CNN feature
+                correlations2 = correlations.view(
+                    1, 17, res_h * res_w).data.cpu()
+                val_k, ind = correlations2.topk(1, dim=2)
+                xs = ind % res_w
+                ys = (ind / res_w).long()
+                val_k, xs, ys = val_k.view(1, 17).numpy(), xs.view(
+                    1, 17).numpy(), ys.view(1, 17).numpy()
+                poses, bbs, centres = get_pose_from_correspondences(ys,
+                                                                    xs,
+                                                                    val_k,
+                                                                    queries[0],
+                                                                    joint_threshold,
+                                                                    corr_threshold,
+                                                                    [network_res[0] * 4,
+                                                                        network_res[1] * 4],
+                                                                    min_kpts=min_kpts)  # poses are discarded here, all temporal continuity info lost!
 
+                if bbs[0][0] == 0 and bbs[0][1] == 0:
+                    continue
+                w, h = bbs[0][2] - bbs[0][0], bbs[0][3] - bbs[0][1]
+                if w == 0 or h == 0:
+                    continue
+                boxes_im.append(bbs[0])
+                centers_im.append(centres[0])
+                track_ids_im.append(track_ids_prev[k])
 
-        # Loop 2: calculate the correlations between neighboring frames
-        print('Computing correlations')
-        N = len(features)  # this N is the length of the whole video
-        new_annos_seq = []
+        # for all bboxes calculated by get_pose_from_correspondences(), redo the pose estimation
+        if len(boxes_im) > 0:
 
-        for n in tqdm(range(1, N)):
-            prevdata = metadata[n-1]
-            keypoints_all = prevdata[0]
-            boxes_im = []
-            centers_im = []
-            N_ins_im = prevdata[3]
-            track_ids_prev = prevdata[5]
-            track_ids_im = []
+            warps_im = create_warps(boxes_im, pose_output_size)
+            N_boxes = len(boxes_im)
+            ims = torch.zeros(
+                N_boxes, 3, pose_output_size[1], pose_output_size[0])
+            imsf = torch.zeros(
+                N_boxes, 3, pose_output_size[1], pose_output_size[0])
+            warps_inv = []
+            inp_images = []
 
-            for k in range(N_ins_im):
-                keypoints = keypoints_all[k]
-                if int(keypoints[2, :].sum()) == -17:
+            for i, w in enumerate(warps_im):
+                # do a manual flip test, prepare the data to feed the model
+                inp_img = images[n].permute(1, 2, 0).numpy()
+
+                im_cv = cv.warpAffine(inp_img, w[0:2, :],
+                                      (pose_output_size[0], pose_output_size[1]))
+
+                img = torch.from_numpy(im_cv).float()
+                img = img.permute(2, 0, 1)
+                ims[i] = img
+
+                imf = cv.flip(im_cv, 1)
+                imgf = torch.from_numpy(imf).float()
+                imgf = imgf.permute(2, 0, 1)
+                imsf[i] = imgf
+
+                inp_images.append(inp_img)
+                warps_inv.append(np.linalg.inv(w))
+
+            with torch.no_grad():
+                inputs = ims.cuda(non_blocking=True)
+                output = model2(inputs)
+                output_det = torch.sigmoid(output[1][:, 0:17, :, :])
+                output_det = output_det.data.cpu()
+                sr = output[1][:, 17:51, :, :].data.cpu()
+
+                inputsf = imsf.cuda(non_blocking=True)
+                outputf = model2(inputsf)
+                outputf = torch.sigmoid(outputf[1][:, 0:17])
+                outputf = outputf.data.cpu()
+
+            # aggregate the test, these are all implemented very well in the MMPose
+            for i, w_inv in enumerate(warps_inv):
+                prs = torch.zeros(17, pose_output_size[1] // 4, pose_output_size[0] // 4)
+                outputflip = outputf[i]
+                outputflip = outputflip[flipRef]
+
+                for j in range(17):
+                    prs[j] = output_det[i][j] + \
+                        torch.from_numpy(cv.flip(outputflip[j].numpy(), 1))
+
+                k, score, pose_crop, pwarped = get_preds(prs, w_inv, sr[i],
+                                                         res_h=pose_output_size[1] // 4,
+                                                         res_w=pose_output_size[0] // 4)
+
+                if np.count_nonzero(np.array(score) >= joint_threshold) < 5:
                     continue
 
-                queries = np.zeros((1, 17, 3))
-                queries[0, :, 0] = (keypoints[1, :] / 4).astype(np.uint)
-                queries[0, :, 1] = (keypoints[0, :] / 4).astype(np.uint)
-                queries[0, :, 2] = keypoints[2, :]
+                pose_im, pose_orig_im, gt = get_poses(k,
+                                                      score,
+                                                      metadata[n][2].numpy(),
+                                                      joint_threshold,
+                                                      [network_res[0] * 4, network_res[1] * 4])
 
-                fA = features[n-1]
-                fA = fA.view(1, 32, res_h, res_w)
+                max_oks = get_max_oks(metadata[n][4], N_ins_im, gt, joint_threshold)
 
-                with torch.no_grad():
-                    output = model(fA, # feature from the previous frame
-                                   features[n].view(1, 32, res_h, res_w), # mid-layer CNN resolution
-                                   queries,  # interested points to calcualte correlation
-                                   embeddings_only=False, 
-                                   correlations_only=True)  # False, True means only run the second part of the model, only correlation
+                if max_oks <= oks_threshold:
+                    new_anno = create_new_anno(metadata[n][1],
+                                               gt,
+                                               score,
+                                               track_ids_im[i])
 
-                    correlations = torch.sigmoid(output)
-                    correlations2 = correlations.view(1, 17, res_h * res_w).data.cpu()  # of the same shape as the mid-layer CNN feature
-                    val_k, ind = correlations2.topk(1, dim=2)
-                    xs = ind % res_w
-                    ys = (ind / res_w).long()
-                    val_k, xs, ys = val_k.view(1, 17).numpy(), xs.view(1, 17).numpy(), ys.view(1, 17).numpy()
-                    poses, bbs, centres = get_pose_from_correspondences(ys, 
-                                                                        xs, 
-                                                                        val_k, 
-                                                                        queries[0], 
-                                                                        joint_threshold,
-                                                                        corr_threshold,
-                                                                        [network_res[0] * 4, network_res[1] * 4],
-                                                                        min_kpts=min_kpts)  # poses are discarded here, all temporal continuity info lost!
+                    metadata[n][0][N_ins_im] = torch.from_numpy(pose_im)
+                    metadata[n][4][N_ins_im] = torch.from_numpy(pose_orig_im[:2, :])
 
-                    if bbs[0][0] == 0 and bbs[0][1] == 0:
-                        continue
-                    w, h = bbs[0][2] - bbs[0][0], bbs[0][3] - bbs[0][1]
-                    if w == 0 or h == 0:
-                        continue
-                    boxes_im.append(bbs[0])
-                    centers_im.append(centres[0])
-                    track_ids_im.append(track_ids_prev[k])
+                    N_ins_im += 1
+                    new_annos_seq.append(new_anno)
 
-            # for all bboxes calculated by get_pose_from_correspondences(), redo the pose estimation
-            if len(boxes_im) > 0:
+    print('Total annos before :' + str(len(anno['annotations'])))
+    for new_anno in new_annos_seq:
+        anno['annotations'].append(new_anno)
+        total_added += 1
 
-                warps_im = create_warps(boxes_im, pose_output_size)
-                N_boxes = len(boxes_im)
-                ims = torch.zeros(N_boxes, 3, pose_output_size[1], pose_output_size[0])
-                imsf = torch.zeros(N_boxes, 3, pose_output_size[1], pose_output_size[0])
-                warps_inv = []
-                inp_images = []
+    track_id_ctr = 0
+    for ann in anno['annotations']:
+        ann['track_id'] = track_id_ctr
+        track_id_ctr += 1
 
-                for i, w in enumerate(warps_im):
-                    # do a manual flip test, prepare the data to feed the model
-                    inp_img = images[n].permute(1, 2, 0).numpy()
-
-                    im_cv = cv.warpAffine(inp_img, w[0:2, :],
-                                          (pose_output_size[0], pose_output_size[1]))
-
-                    img = torch.from_numpy(im_cv).float()
-                    img = img.permute(2, 0, 1)
-                    ims[i] = img
-
-                    imf = cv.flip(im_cv, 1)
-                    imgf = torch.from_numpy(imf).float()
-                    imgf = imgf.permute(2, 0, 1)
-                    imsf[i] = imgf
-
-                    inp_images.append(inp_img)
-                    warps_inv.append(np.linalg.inv(w))
-
-                with torch.no_grad():
-                    inputs = ims.cuda(non_blocking=True)
-                    output = model2(inputs)
-                    output_det = torch.sigmoid(output[1][:, 0:17, :, :])
-                    output_det = output_det.data.cpu()
-                    sr = output[1][:, 17:51, :, :].data.cpu()
-
-                    inputsf = imsf.cuda(non_blocking=True)
-                    outputf = model2(inputsf)
-                    outputf = torch.sigmoid(outputf[1][:, 0:17])
-                    outputf = outputf.data.cpu()
-
-                # aggregate the test, these are all implemented very well in the MMPose
-                for i, w_inv in enumerate(warps_inv):
-                    prs = torch.zeros(17, pose_output_size[1] // 4, pose_output_size[0] // 4)
-                    outputflip = outputf[i]
-                    outputflip = outputflip[flipRef]
-
-                    for j in range(17):
-                        prs[j] = output_det[i][j] + torch.from_numpy(cv.flip(outputflip[j].numpy(), 1))
-
-                    k, score, pose_crop, pwarped = get_preds(prs, w_inv, sr[i],
-                                                             res_h=pose_output_size[1] // 4,
-                                                             res_w=pose_output_size[0] // 4)
-
-                    if np.count_nonzero(np.array(score) >= joint_threshold) < 5:
-                        continue
-
-                    pose_im, pose_orig_im, gt = get_poses(k, 
-                                                          score, 
-                                                          metadata[n][2].numpy(),
-                                                          joint_threshold, 
-                                                          [network_res[0] * 4, network_res[1] * 4])
-
-                    max_oks = get_max_oks(metadata[n][4], N_ins_im, gt, joint_threshold)
-
-                    if max_oks <= oks_threshold:
-                        new_anno = create_new_anno(metadata[n][1], 
-                                                   gt, 
-                                                   score, 
-                                                   track_ids_im[i])
-
-                        metadata[n][0][N_ins_im] = torch.from_numpy(pose_im)
-                        metadata[n][4][N_ins_im] = torch.from_numpy(pose_orig_im[:2, :])
-
-                        N_ins_im += 1
-                        new_annos_seq.append(new_anno)
-
-        print('Total annos before :' + str(len(anno['annotations'])))
-        for new_anno in new_annos_seq:
-            anno['annotations'].append(new_anno)
-            total_added += 1
-
-        track_id_ctr = 0
-        for ann in anno['annotations']:
-            ann['track_id'] = track_id_ctr
-            track_id_ctr += 1
-
-        print('Total annos after :' + str(len(anno['annotations'])))
-        with open(os.path.join(seq_save_path, seq), 'w') as outfile:
-            json.dump(anno, outfile)
+    print('Total annos after :' + str(len(anno['annotations'])))
+    with open(os.path.join(seq_save_path, seq), 'w') as outfile:
+        json.dump(anno, outfile)
 
     print('Total new annos : ' + str(total_added))
     print('Total time : ' + str(time.time() - start_time))
@@ -368,7 +365,6 @@ def parse_args():
     parser.add_argument('-oks', '--oks_threshold', type=float, default=0.7)
     parser.add_argument('-corr', '--corr_threshold', type=float, default=0.1)
     parser.add_argument('-jt', '--joint_threshold', type=float, default=0.05)
-    parser.add_argument('--bb_thres', type=float, default=0.5)
     parser.add_argument('--corr_ckpt_path', type=str)
     parser.add_argument('--pose_ckpt_path', type=str)
 
@@ -376,19 +372,35 @@ def parse_args():
     parser.add_argument('--save_path', type=str)
     parser.add_argument('--dataset_path', type=str)
     parser.add_argument('--num_stages', type=int, default=2)
+    parser.add_argument('--rank', type=int, required=True)
+    parser.add_argument('--world', type=int, required=True)
     return parser.parse_args()
 
 
 if __name__ == '__main__':
     args = parse_args()
-    correspondence_boxes(corr_ckpt_path=args.corr_ckpt_path,
-                         pose_ckpt_path=args.pose_ckpt_path,
-                         sequences_path=args.sequences_path,
-                         save_path=args.save_path,
-                         dataset_path=args.dataset_path,
-                         bb_thres=args.bb_thres,
-                         joint_threshold=args.joint_threshold,
-                         corr_threshold=args.corr_threshold,
-                         oks_threshold=args.oks_threshold,
-                         network_res=[128, 128],
-                         pose_output_size=[288, 384])
+    seq_save_path = os.path.join(
+        args.save_path, 'val_set_jt_{}_with_corr_{}_at_oks_{}/'.format(args.joint_threshold,
+                                                                       args.corr_threshold,
+                                                                       args.oks_threshold)
+    )
+    os.makedirs(seq_save_path, exist_ok=True)
+
+    # video is the path to a json file
+    json_paths = sorted(list(os.listdir(args.sequences_path)))[
+        args.rank::args.world]
+
+    for json_path in tqdm(json_paths):
+        if os.path.exists(os.path.join(seq_save_path, json_path)):
+            continue  # avoid redoing
+        correspondence_boxes(corr_ckpt_path=args.corr_ckpt_path,
+                             pose_ckpt_path=args.pose_ckpt_path,
+                             sequences_path=os.path.join(
+                                 args.sequences_path, json_path),
+                             seq_save_path=seq_save_path,
+                             dataset_path=args.dataset_path,
+                             joint_threshold=args.joint_threshold,
+                             corr_threshold=args.corr_threshold,
+                             oks_threshold=args.oks_threshold,
+                             network_res=[128, 128],
+                             pose_output_size=[288, 384])
