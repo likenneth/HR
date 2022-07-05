@@ -24,6 +24,12 @@ from utils.vis import save_debug_images
 logger = logging.getLogger(__name__)
 
 
+def reformat(x):
+    x = x.replace("(", "_")
+    x = x.replace(")", "_")
+    x = "_".join(x.split(" "))
+    return x
+
 def train(config, train_loader, model, criterion, optimizer, epoch,
           output_dir, tb_log_dir, writer_dict):
     batch_time = AverageMeter()
@@ -101,6 +107,8 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
     batch_time = AverageMeter()
     losses = AverageMeter()
     acc = AverageMeter()
+
+    data_prefix = "_".join([val_dataset.name, val_dataset.image_set, ""])
 
     # switch to evaluate mode
     model.eval()
@@ -212,12 +220,12 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
             writer = writer_dict['writer']
             global_steps = writer_dict['valid_global_steps']
             writer.add_scalar(
-                'valid_loss',
+                data_prefix + 'valid_loss',
                 losses.avg,
                 global_steps
             )
             writer.add_scalar(
-                'valid_acc',
+                data_prefix + 'valid_acc',
                 acc.avg,
                 global_steps
             )
@@ -225,14 +233,14 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                 for name_value in name_values:
                     for k, w in dict(name_value).items():
                         writer.add_scalar(
-                            k,
+                            reformat(data_prefix + k),
                             w,
                             global_steps
                         )
             else:
                 for k, w in dict(name_values).items():
                     writer.add_scalar(
-                        k,
+                        reformat(data_prefix + k),
                         w,
                         global_steps
                     )

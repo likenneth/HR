@@ -23,6 +23,21 @@ DATASET:
   TEST_SET: 'val2017'
   TRAIN_SET: 'train2017'
   PARTIAL: 0.2
+  TEST_BBOX_FILE: 'data/coco/person_detection_results/COCO_val2017_detections_AP_H_56_person.json'
+OCHUMAN:
+  COLOR_RGB: true
+  DATASET: 'ochuman'
+  DATA_FORMAT: jpg
+  FLIP: true
+  NUM_JOINTS_HALF_BODY: 8
+  PROB_HALF_BODY: 0.3
+  ROOT: 'data/ochuman/'
+  ROT_FACTOR: 45
+  SCALE_FACTOR: 0.35
+  VAL_SET: 'val'
+  TEST_SET: 'test'
+  VAL_BBOX_FILE: 'annotations/ochuman_coco_format_val_range_0.00_1.00.json'
+  TEST_BBOX_FILE: 'annotations/ochuman_coco_format_test_range_0.00_1.00.json'
 MODEL:
   INIT_WEIGHTS: true
   NAME: pose_hrnet
@@ -109,7 +124,6 @@ TRAIN:
   NESTEROV: false
 TEST:
   BATCH_SIZE_PER_GPU: 48
-  COCO_BBOX_FILE: 'data/coco/person_detection_results/COCO_val2017_detections_AP_H_56_person.json'
   BBOX_THRE: 1.0
   IMAGE_THRE: 0.0
   IN_VIS_THRE: 0.2

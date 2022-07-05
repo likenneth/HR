@@ -53,13 +53,14 @@ class OCHumanDataset(JointsDataset):
     '''
     def __init__(self, cfg, root, image_set, is_train, transform=None):
         super().__init__(cfg, root, image_set, is_train, transform)
+        assert not is_train
         self.name = "OCHuman"
         self.nms_thre = cfg.TEST.NMS_THRE
         self.image_thre = cfg.TEST.IMAGE_THRE
         self.soft_nms = cfg.TEST.SOFT_NMS
         self.oks_thre = cfg.TEST.OKS_THRE
         self.in_vis_thre = cfg.TEST.IN_VIS_THRE
-        self.bbox_file = cfg.TEST.COCO_BBOX_FILE
+        self.bbox_file = {"val": cfg.OCHUMAN.VAL_BBOX_FILE, "test": cfg.OCHUMAN.TEST_BBOX_FILE}
         self.use_gt_bbox = cfg.TEST.USE_GT_BBOX
         self.image_width = cfg.MODEL.IMAGE_SIZE[0]
         self.image_height = cfg.MODEL.IMAGE_SIZE[1]
@@ -102,14 +103,7 @@ class OCHumanDataset(JointsDataset):
             ],
             dtype=np.float32
         ).reshape((self.num_joints, 1))
-
         self.db = self._get_db()
-        if is_train:
-            self.db = self.db[:round(len(self.db) * cfg.DATASET.PARTIAL)]
-
-        if is_train and cfg.DATASET.SELECT_DATA:
-            self.db = self.select_data(self.db)
-
         logger.info('=> load {} samples for {}'.format(len(self.db), self.name))
 
     def _get_ann_file_keypoint(self):
@@ -247,11 +241,11 @@ class OCHumanDataset(JointsDataset):
 
     def _load_coco_person_detection_results(self):
         all_boxes = None
-        with open(self.bbox_file, 'r') as f:
+        with open(self.bbox_file[self.image_set], 'r') as f:
             all_boxes = json.load(f)
 
         if not all_boxes:
-            logger.error('=> Load %s fail!' % self.bbox_file)
+            logger.error('=> Load %s fail!' % self.bbox_file[self.image_set])
             return None
 
         logger.info('=> Total boxes: {}'.format(len(all_boxes)))
@@ -300,8 +294,8 @@ class OCHumanDataset(JointsDataset):
                 logger.error('Fail to make {}'.format(res_folder))
 
         res_file = os.path.join(
-            res_folder, 'keypoints_{}_results_{}.json'.format(
-                self.image_set, rank)
+            res_folder, 'keypoints_{}_{}_results_{}.json'.format(
+                self.name, self.image_set, rank)
         )
 
         # person x (keypoints)
@@ -359,13 +353,11 @@ class OCHumanDataset(JointsDataset):
 
         self._write_coco_keypoint_results(
             oks_nmsed_kpts, res_file)
-        if 'test' not in self.image_set:
-            info_str = self._do_python_keypoint_eval(
-                res_file, res_folder)
-            name_value = OrderedDict(info_str)
-            return name_value, name_value['AP']
-        else:
-            return {'Null': 0}, 0
+
+        info_str = self._do_python_keypoint_eval(
+            res_file, res_folder)
+        name_value = OrderedDict(info_str)
+        return name_value, name_value['AP']
 
     def _write_coco_keypoint_results(self, keypoints, res_file):
         data_pack = [

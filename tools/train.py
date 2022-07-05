@@ -39,6 +39,7 @@ import dataset
 import models
 
 DEBUG = False
+OC = True
 
 class CatDataLoaders(object):
     def __init__(self, datasets, batch_sizes, cfg):
@@ -215,13 +216,33 @@ def main():
     else:
         assert 0
 
-    valid_dataset = eval('dataset.'+cfg.DATASET.DATASET)(
+    valid_datasets = []
+    coco_val = eval('dataset.'+cfg.DATASET.DATASET)(
         cfg, cfg.DATASET.ROOT, cfg.DATASET.TEST_SET, False,
         transforms.Compose([
             transforms.ToTensor(),
             normalize,
         ])
     )
+    valid_datasets.append(coco_val)
+
+    if OC and hasattr(cfg, "OCHUMAN"):
+        oc_val = eval('dataset.'+cfg.OCHUMAN.DATASET)(
+            cfg, cfg.OCHUMAN.ROOT, cfg.OCHUMAN.VAL_SET, False,
+            transforms.Compose([
+                transforms.ToTensor(),
+                normalize,
+            ])
+        )
+        valid_datasets.append(oc_val)
+        oc_test = eval('dataset.'+cfg.OCHUMAN.DATASET)(
+            cfg, cfg.OCHUMAN.ROOT, cfg.OCHUMAN.TEST_SET, False,
+            transforms.Compose([
+                transforms.ToTensor(),
+                normalize,
+            ])
+        )
+        valid_datasets.append(oc_test)
 
     if DEBUG:
         train_dataset = additional_trainset[1]
@@ -235,13 +256,17 @@ def main():
     else:
         train_loader = CatDataLoaders(additional_trainset, additional_pcts, cfg)
 
-    valid_loader = torch.utils.data.DataLoader(
-        valid_dataset,
-        batch_size=cfg.TEST.BATCH_SIZE_PER_GPU*len(cfg.GPUS),
-        shuffle=False,
-        num_workers=cfg.WORKERS,
-        pin_memory=cfg.PIN_MEMORY
-    )
+    valid_loaders = []
+    for valid_dataset in valid_datasets:
+        valid_loaders.append(
+            torch.utils.data.DataLoader(
+                valid_dataset,
+                batch_size=cfg.TEST.BATCH_SIZE_PER_GPU*len(cfg.GPUS),
+                shuffle=False,
+                num_workers=cfg.WORKERS,
+                pin_memory=cfg.PIN_MEMORY
+            )
+        )
 
     best_perf = 0.0
     best_model = False
@@ -278,9 +303,15 @@ def main():
 
         # evaluate on validation set
         perf_indicator = validate(
-            cfg, valid_loader, valid_dataset, model, criterion,
+            cfg, valid_loaders[0], valid_datasets[0], model, criterion,
             final_output_dir, tb_log_dir, writer_dict
-        )
+        )  # valid_loaders[0] is always COCO val2017
+        if OC:
+            for valid_loader, valid_dataset in zip(valid_loaders[1:], valid_datasets[1:]):
+                _ = validate(
+                    cfg, valid_loader, valid_dataset, model, criterion,
+                    final_output_dir, tb_log_dir, writer_dict
+                )
 
         if perf_indicator >= best_perf:
             best_perf = perf_indicator

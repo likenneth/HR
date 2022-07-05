@@ -9,4 +9,5 @@
 # done
 # done
 
-# srun --job-name=t --cpus-per-task=80 --gpus-per-node=8 --constraint volta32gb --nodes=1 --ntasks=1 --time=3-00:00:00 --partition=pixar python tools/train.py --exp findbbkptthres_baseline --cfg experiments/coco/hrnet/baseline.yaml GPUS '(0,1,2,3,4,5,6,7)' &
+# srun --job-name=t --cpus-per-task=80 --gpus-per-node=8 --constraint volta32gb --nodes=1 --ntasks=1 --time=3-00:00:00 --partition=pixar 
+python tools/train.py --exp debug --cfg experiments/coco/hrnet/coco.yaml GPUS '(0,1)'
