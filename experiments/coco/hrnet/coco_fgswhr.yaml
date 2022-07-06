@@ -26,7 +26,7 @@ DATASET:
   TEST_BBOX_FILE: 'data/coco/person_detection_results/COCO_val2017_detections_AP_H_56_person.json'
 FINEGYM:
   PCT: 20
-  PSEUDO_LABEL: 'openmmlab/FineGym_Swin_HRNet'
+  PSEUDO_LABEL: 'openmmlab/FullFineGym_Swin_CorrTrack_HRNet'
   BB_CONF_THRES: 0.8
   KPT_CONF_THRES: 0.5
   COLOR_RGB: true

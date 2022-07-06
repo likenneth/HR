@@ -16,7 +16,7 @@ import pickle
 from tqdm import tqdm
 from itertools import repeat
 
-import json_tricks as json
+import json
 import numpy as np
 import multiprocessing
 
@@ -28,8 +28,11 @@ from nms.nms import soft_oks_nms
 logger = logging.getLogger(__name__)
 DEBUG=False
 
-def worker(fgds, action):
-    return fgds.load_annotation_for_action(action)
+# def worker(fgds, action):
+#     return fgds.load_annotation_for_action(action)
+
+def worker(fgds, event):
+    return fgds.load_annotation_for_event(event)
 
 class FineGymDataset(JointsDataset):
     '''
@@ -59,13 +62,13 @@ class FineGymDataset(JointsDataset):
     def __init__(self, cfg, root, image_set, is_train, transform=None):
         super().__init__(cfg, root, image_set, is_train, transform)
         self.name = "FineGym"
-        self.nms_thre = cfg.TEST.NMS_THRE
-        self.image_thre = cfg.TEST.IMAGE_THRE
-        self.soft_nms = cfg.TEST.SOFT_NMS
-        self.oks_thre = cfg.TEST.OKS_THRE
-        self.in_vis_thre = cfg.TEST.IN_VIS_THRE
-        self.bbox_file = cfg.TEST.COCO_BBOX_FILE
-        self.use_gt_bbox = cfg.TEST.USE_GT_BBOX
+        # self.nms_thre = cfg.TEST.NMS_THRE
+        # self.image_thre = cfg.TEST.IMAGE_THRE
+        # self.soft_nms = cfg.TEST.SOFT_NMS
+        # self.oks_thre = cfg.TEST.OKS_THRE
+        # self.in_vis_thre = cfg.TEST.IN_VIS_THRE
+        # self.bbox_file = cfg.TEST.COCO_BBOX_FILE
+        # self.use_gt_bbox = cfg.TEST.USE_GT_BBOX
         self.image_width = cfg.MODEL.IMAGE_SIZE[0]
         self.image_height = cfg.MODEL.IMAGE_SIZE[1]
         self.aspect_ratio = self.image_width * 1.0 / self.image_height
@@ -89,6 +92,8 @@ class FineGymDataset(JointsDataset):
 
         self.kpt_conf_thres = cfg.FINEGYM.KPT_CONF_THRES  # only use label with higher confidence
         self.bb_conf_thres = cfg.FINEGYM.BB_CONF_THRES  # only use label with higher confidence
+
+        """  # taking some 0-127 format returned from mmpose
         action_annotations = []
         for part_file in os.listdir(cfg.FINEGYM.PSEUDO_LABEL):
             with open(os.path.join(cfg.FINEGYM.PSEUDO_LABEL, part_file), "rb") as input_file:
@@ -96,15 +101,27 @@ class FineGymDataset(JointsDataset):
                 action_annotations.extend(read)
         # 'time_stamp', 'action_name', 'bb', 'bb_score', 'img_shape', 'original_shape', 'total_frames', 'num_person_raw', 'keypoint', 'keypoint_score'
         # 'keypoint': [max #person, #frame, 17, 2], use [0, 0] to fill persons not appearing
-
-        num_proc = max(1, multiprocessing.cpu_count() - 1)  # use all processors
+        """
+        event_jsons = [os.path.join(cfg.FINEGYM.PSEUDO_LABEL, _) for _ in os.listdir(cfg.FINEGYM.PSEUDO_LABEL)]  # 12818 json paths
         db = []
-        
+        num_proc = max(1, multiprocessing.cpu_count() - 1)  # use all processors
         p = multiprocessing.Pool(num_proc)
+        print(f"=> using {num_proc} processors to load FineGym...")
+        """  # taking some 0-127 format returned from mmpose  
         bar = tqdm(total=len(action_annotations) if not DEBUG else 100)
         for res in p.starmap(worker, zip(repeat(self), action_annotations[:len(action_annotations) if not DEBUG else 100])):
             db.extend(res)
             bar.update(1)
+        """
+
+        bar = tqdm(total=len(event_jsons) if not DEBUG else 100)
+        for res in p.starmap(worker, zip(repeat(self), event_jsons[:len(event_jsons) if not DEBUG else 100])):
+            db.extend(res)
+            bar.update(1)
+
+        # for event in tqdm(event_jsons):
+            # db.extend(self.load_annotation_for_event(event))
+
         p.close()
         p.join()
         self.db = db
@@ -113,6 +130,46 @@ class FineGymDataset(JointsDataset):
 
         logger.info('=> load {} samples for {}'.format(len(self.db), self.name))
 
+    def load_annotation_for_event(self, event):
+        tbr = []
+        try:
+            with open(event, "rb") as input_file:
+                read = json.load(input_file)
+        except:
+            print(f"{event} non-exist")
+            # return tbr
+
+        one_frame_name = read["annotations"][0]["image_id"]
+        # print(one_frame_name)
+        youtube_name = one_frame_name[:11]
+        _, event_s, event_e, _ = one_frame_name[12:].split("_")
+        event_folder = os.path.join(self.root, "processed_frames", "_".join([youtube_name, "E", event_s, event_e]))
+
+        for anno in read["annotations"]:
+            # each a dict with keys: ['image_id', 'keypoints', 'scores', 'track_id', 'bbox', 'category_id']
+            kpt = np.array(anno["keypoints"]).reshape(self.num_joints, 3)
+            # in corrtrack output, all bb has confidence = 1, only threshold with kpt confidence
+            if np.any(kpt[:, -1] > self.kpt_conf_thres):
+                joints_3d = np.zeros((self.num_joints, 3), dtype=np.float)
+                joints_3d[:, :2] = kpt[:, :2]
+                joints_3d_vis = np.zeros((self.num_joints, 3), dtype=np.float)
+                joints_3d_vis[:, :2] = (kpt[:, 2:3] > self.kpt_conf_thres).astype(np.float)
+                center, scale = self._box2cs(anno['bbox'][:4])
+                glob_fidx = int(anno["image_id"].split("_")[-1])
+                image_path = os.path.join(event_folder, f"{glob_fidx:03}.jpg")  # no need to +1
+                assert os.path.exists(image_path), f"Cannot fine {image_path}"
+                tbr.append({
+                    'image': image_path,
+                    'center': center,
+                    'scale': scale,
+                    'joints_3d': joints_3d,
+                    'joints_3d_vis': joints_3d_vis,
+                    'filename': '',
+                    'imgnum': 0,
+                })
+        return tbr
+
+    """  # taking some 0-127 format returned from mmpose  
     def load_annotation_for_action(self, action):
         tbr = []
         s = round(action['time_stamp'][0] * self.fps)  # starting 0
@@ -145,6 +202,7 @@ class FineGymDataset(JointsDataset):
                         'imgnum': 0,
                     })
         return tbr
+    """
 
     def _box2cs(self, box):
         x, y, w, h = box[:4]

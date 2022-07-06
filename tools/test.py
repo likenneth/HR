@@ -31,6 +31,7 @@ from utils.utils import create_logger
 import dataset
 import models
 
+OC = True
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train keypoints network')
@@ -111,25 +112,58 @@ def main():
     normalize = transforms.Normalize(
         mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
     )
-    valid_dataset = eval('dataset.'+cfg.DATASET.DATASET)(
+
+    valid_datasets = []
+    coco_val = eval('dataset.'+cfg.DATASET.DATASET)(
         cfg, cfg.DATASET.ROOT, cfg.DATASET.TEST_SET, False,
         transforms.Compose([
             transforms.ToTensor(),
             normalize,
         ])
     )
-    valid_loader = torch.utils.data.DataLoader(
-        valid_dataset,
-        batch_size=cfg.TEST.BATCH_SIZE_PER_GPU*len(cfg.GPUS),
-        shuffle=False,
-        num_workers=cfg.WORKERS,
-        pin_memory=True
-    )
+    valid_datasets.append(coco_val)
 
-    # evaluate on validation set
-    validate(cfg, valid_loader, valid_dataset, model, criterion,
-             final_output_dir, tb_log_dir)
+    if OC and hasattr(cfg, "OCHUMAN"):
+        oc_val = eval('dataset.'+cfg.OCHUMAN.DATASET)(
+            cfg, cfg.OCHUMAN.ROOT, cfg.OCHUMAN.VAL_SET, False,
+            transforms.Compose([
+                transforms.ToTensor(),
+                normalize,
+            ])
+        )
+        valid_datasets.append(oc_val)
+        oc_test = eval('dataset.'+cfg.OCHUMAN.DATASET)(
+            cfg, cfg.OCHUMAN.ROOT, cfg.OCHUMAN.TEST_SET, False,
+            transforms.Compose([
+                transforms.ToTensor(),
+                normalize,
+            ])
+        )
+        valid_datasets.append(oc_test)
 
+
+    valid_loaders = []
+    for valid_dataset in valid_datasets:
+        valid_loaders.append(
+            torch.utils.data.DataLoader(
+                valid_dataset,
+                batch_size=cfg.TEST.BATCH_SIZE_PER_GPU*len(cfg.GPUS),
+                shuffle=False,
+                num_workers=cfg.WORKERS,
+                pin_memory=cfg.PIN_MEMORY
+            )
+        )
+    
+    perf_indicator = validate(
+        cfg, valid_loaders[0], valid_datasets[0], model, criterion,
+        final_output_dir, tb_log_dir
+    )  # valid_loaders[0] is always COCO val2017
+    if OC:
+        for valid_loader, valid_dataset in zip(valid_loaders[1:], valid_datasets[1:]):
+            _ = validate(
+                cfg, valid_loader, valid_dataset, model, criterion,
+                final_output_dir, tb_log_dir
+            )
 
 if __name__ == '__main__':
     main()
