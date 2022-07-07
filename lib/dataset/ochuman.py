@@ -103,6 +103,7 @@ class OCHumanDataset(JointsDataset):
             ],
             dtype=np.float32
         ).reshape((self.num_joints, 1))
+        self.image2id = {}
         self.db = self._get_db()
         logger.info('=> load {} samples for {}'.format(len(self.db), self.name))
 
@@ -133,6 +134,7 @@ class OCHumanDataset(JointsDataset):
             gt_db = self._load_coco_keypoint_annotations()
         else:
             # use bbox from detection
+            assert 0
             gt_db = self._load_coco_person_detection_results()
         return gt_db
 
@@ -155,6 +157,7 @@ class OCHumanDataset(JointsDataset):
         :return: db entry
         """
         im_ann = self.coco.loadImgs(index)[0]
+        self.image2id[im_ann["file_name"]] = index
         width = im_ann['width']
         height = im_ann['height']
 
@@ -199,7 +202,7 @@ class OCHumanDataset(JointsDataset):
 
             center, scale = self._box2cs(obj['clean_bbox'][:4])
             rec.append({
-                'image': self.image_path_from_index(index),
+                'image': os.path.join(self.root, 'images', im_ann["file_name"]), 
                 'center': center,
                 'scale': scale,
                 'joints_3d': joints_3d,
@@ -231,57 +234,6 @@ class OCHumanDataset(JointsDataset):
 
         return center, scale
 
-    def image_path_from_index(self, index):
-        """ example: images / train2017 / 000000119993.jpg """
-        file_name = '%06d.jpg' % index
-
-        image_path = os.path.join(self.root, 'images', file_name)
-
-        return image_path
-
-    def _load_coco_person_detection_results(self):
-        all_boxes = None
-        with open(self.bbox_file[self.image_set], 'r') as f:
-            all_boxes = json.load(f)
-
-        if not all_boxes:
-            logger.error('=> Load %s fail!' % self.bbox_file[self.image_set])
-            return None
-
-        logger.info('=> Total boxes: {}'.format(len(all_boxes)))
-
-        kpt_db = []
-        num_boxes = 0
-        for n_img in range(0, len(all_boxes)):
-            det_res = all_boxes[n_img]
-            if det_res['category_id'] != 1:
-                continue
-            img_name = self.image_path_from_index(det_res['image_id'])
-            box = det_res['bbox']
-            score = det_res['score']
-
-            if score < self.image_thre:
-                continue
-
-            num_boxes = num_boxes + 1
-
-            center, scale = self._box2cs(box)
-            joints_3d = np.zeros((self.num_joints, 3), dtype=np.float)
-            joints_3d_vis = np.ones(
-                (self.num_joints, 3), dtype=np.float)
-            kpt_db.append({
-                'image': img_name,
-                'center': center,
-                'scale': scale,
-                'score': score,
-                'joints_3d': joints_3d,
-                'joints_3d_vis': joints_3d_vis,
-            })
-
-        logger.info('=> Total boxes after fliter low score@{}: {}'.format(
-            self.image_thre, num_boxes))
-        return kpt_db
-
     def evaluate(self, cfg, preds, output_dir, all_boxes, img_path,
                  *args, **kwargs):
         rank = cfg.RANK
@@ -307,7 +259,7 @@ class OCHumanDataset(JointsDataset):
                 'scale': all_boxes[idx][2:4],
                 'area': all_boxes[idx][4],
                 'score': all_boxes[idx][5],
-                'image': int(img_path[idx][-9:-4])
+                'image': self.image2id[os.path.basename(img_path[idx])], 
             })
         # image x person x (keypoints)
         kpts = defaultdict(list)

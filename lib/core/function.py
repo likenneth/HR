@@ -98,8 +98,7 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
             writer_dict['train_global_steps'] = global_steps + 1
 
             prefix = '{}_{}'.format(os.path.join(output_dir, 'train'), i)
-            save_debug_images(config, input, meta, target, pred*4, output,
-                              prefix)
+            # save_debug_images(config, input, meta, target, pred*4, output, prefix)
 
 
 def validate(config, val_loader, val_dataset, model, criterion, output_dir,
@@ -201,8 +200,9 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                 prefix = '{}_{}'.format(
                     os.path.join(output_dir, 'val'), i
                 )
-                save_debug_images(config, input, meta, target, pred*4, output,
-                                  prefix)
+                if val_dataset.name == "OCHuman" and val_dataset.image_set == "val":
+                # if val_dataset.name == "COCO":
+                    save_debug_images(config, input, meta, target, pred*4, output, prefix)
 
         name_values, perf_indicator = val_dataset.evaluate(
             config, all_preds, output_dir, all_boxes, image_path,
@@ -244,7 +244,6 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                         w,
                         global_steps
                     )
-            writer_dict['valid_global_steps'] = global_steps + 1
 
     return perf_indicator
 

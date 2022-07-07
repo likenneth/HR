@@ -306,6 +306,8 @@ def main():
             cfg, valid_loaders[0], valid_datasets[0], model, criterion,
             final_output_dir, tb_log_dir, writer_dict
         )  # valid_loaders[0] is always COCO val2017
+        writer_dict['valid_global_steps'] += 1
+
         if OC:
             for valid_loader, valid_dataset in zip(valid_loaders[1:], valid_datasets[1:]):
                 _ = validate(
