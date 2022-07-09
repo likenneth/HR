@@ -47,13 +47,15 @@ def get_max_preds(batch_heatmaps):
 
 
 def get_final_preds(config, batch_heatmaps, center, scale):
-    coords, maxvals = get_max_preds(batch_heatmaps)
+    coords, maxvals = get_max_preds(batch_heatmaps)  
+    # coords, [B, #J, 2], int coordinates in the heatmap resolution, [..., 0] range from 0 to W - 1, [..., 1] ranges from 0 to H - 1
+    # maxvals, [B, #J, 1], the value < 1
 
     heatmap_height = batch_heatmaps.shape[2]
     heatmap_width = batch_heatmaps.shape[3]
 
     # post-processing
-    if config.TEST.POST_PROCESS:
+    if config.TEST.POST_PROCESS:  # move the integer coordinates produced by max() by 0.25 relying neighboring heatmap values
         for n in range(coords.shape[0]):
             for p in range(coords.shape[1]):
                 hm = batch_heatmaps[n][p]
@@ -63,7 +65,7 @@ def get_final_preds(config, batch_heatmaps, center, scale):
                     diff = np.array(
                         [
                             hm[py][px+1] - hm[py][px-1],
-                            hm[py+1][px]-hm[py-1][px]
+                            hm[py+1][px] - hm[py-1][px]
                         ]
                     )
                     coords[n][p] += np.sign(diff) * .25
@@ -76,4 +78,5 @@ def get_final_preds(config, batch_heatmaps, center, scale):
             coords[i], center[i], scale[i], [heatmap_width, heatmap_height]
         )
 
+    # preds, [B, #J, 2], float coordinates at original resolution, [..., 0] range from 0 to 1, [..., 1] ranges from 0 to 1
     return preds, maxvals

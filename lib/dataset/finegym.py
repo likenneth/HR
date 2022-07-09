@@ -13,6 +13,7 @@ from collections import OrderedDict
 import logging
 import os
 import pickle
+import string
 from tqdm import tqdm
 from itertools import repeat
 
@@ -59,7 +60,7 @@ class FineGymDataset(JointsDataset):
         [16,14],[14,12],[17,15],[15,13],[12,13],[6,12],[7,13], [6,7],[6,8],
         [7,9],[8,10],[9,11],[2,3],[1,2],[1,3],[2,4],[3,5],[4,6],[5,7]]
     '''
-    def __init__(self, cfg, root, image_set, is_train, transform=None):
+    def __init__(self, cfg, root, image_set, is_train, transform=None, json_index=-1):
         super().__init__(cfg, root, image_set, is_train, transform)
         self.name = "FineGym"
         # self.nms_thre = cfg.TEST.NMS_THRE
@@ -102,9 +103,15 @@ class FineGymDataset(JointsDataset):
         # 'time_stamp', 'action_name', 'bb', 'bb_score', 'img_shape', 'original_shape', 'total_frames', 'num_person_raw', 'keypoint', 'keypoint_score'
         # 'keypoint': [max #person, #frame, 17, 2], use [0, 0] to fill persons not appearing
         """
-        event_jsons = [os.path.join(cfg.FINEGYM.PSEUDO_LABEL, _) for _ in os.listdir(cfg.FINEGYM.PSEUDO_LABEL)]  # 12818 json paths
+
+        if json_index == -1:
+            event_jsons = [os.path.join(cfg.FINEGYM.PSEUDO_LABEL, _) for _ in os.listdir(cfg.FINEGYM.PSEUDO_LABEL)]  # 12818 json paths
+        else:
+            if isinstance(json_index, str):
+                json_index = [json_index, ]
+            event_jsons = [os.path.join(cfg.FINEGYM.PSEUDO_LABEL, _) for _ in sorted(list(os.listdir(cfg.FINEGYM.PSEUDO_LABEL))) if _ in json_index]
         db = []
-        num_proc = max(1, multiprocessing.cpu_count() - 1)  # use all processors
+        num_proc = max(1, multiprocessing.cpu_count() // 2)  # use all processors
         p = multiprocessing.Pool(num_proc)
         print(f"=> using {num_proc} processors to load FineGym...")
         """  # taking some 0-127 format returned from mmpose  
@@ -120,13 +127,11 @@ class FineGymDataset(JointsDataset):
             bar.update(1)
 
         # for event in tqdm(event_jsons):
-            # db.extend(self.load_annotation_for_event(event))
+        #     db.extend(self.load_annotation_for_event(event))
 
         p.close()
         p.join()
         self.db = db
-        # if is_train and cfg.FINEGYM.SELECT_DATA:
-        #     self.db = self.select_data(self.db)
 
         logger.info('=> load {} samples for {}'.format(len(self.db), self.name))
 
@@ -166,6 +171,7 @@ class FineGymDataset(JointsDataset):
                     'joints_3d_vis': joints_3d_vis,
                     'filename': '',
                     'imgnum': 0,
+                    'track_id': anno["track_id"], 
                 })
         return tbr
 

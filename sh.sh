@@ -3,3 +3,4 @@
 # python tools/train.py --exp coco20 --cfg experiments/coco/hrnet/coco.yaml DATASET.PARTIAL 0.2 &
 # python tools/train.py --exp coco --cfg experiments/coco/hrnet/coco.yaml DATASET.PARTIAL 1.0 &
 # python tools/train.py --exp coco_fgswcthr --cfg experiments/coco/hrnet/coco_fgswcthr.yaml DATASET.PARTIAL 1.0 &
+python tools/train.py --exp coco20_fgswcthr --cfg experiments/coco/hrnet/coco_fgswcthr.yaml DATASET.PARTIAL 0.2 FINEGYM.PSEUDO_LABEL "smoother/COCO20_wo_smooth" &

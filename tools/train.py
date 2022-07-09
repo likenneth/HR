@@ -42,7 +42,7 @@ DEBUG = False
 OC = True
 
 class CatDataLoaders(object):
-    def __init__(self, datasets, batch_sizes, cfg):
+    def __init__(self, datasets, batch_sizes, cfg, logger):
         self.dataloaders = []
         self.batch_sizes = batch_sizes
         for i, (dataset, batch_size) in enumerate(zip(datasets, batch_sizes)):
@@ -55,8 +55,8 @@ class CatDataLoaders(object):
                     pin_memory=cfg.PIN_MEMORY# if i == 0 else False, 
                 )
             )
-            print(f"=> {dataset.name} has {len(dataset)} perons, per-GPU batch size of {batch_size}, and {len(self.dataloaders[-1])} iters per epoch")
-        print(f"=> Concatenate Dataset Created with batch size {batch_sizes} and length {len(self)}")
+            logger.info(f"=> {dataset.name} has {len(dataset)} perons, per-GPU batch size of {batch_size}, and {len(self.dataloaders[-1])} iters per epoch")
+        logger.info(f"=> Concatenate Dataset Created with batch size {batch_sizes} and length {len(self)}")
 
     def __len__(self, ):
         return len(self.dataloaders[0])
@@ -254,7 +254,7 @@ def main():
             pin_memory=cfg.PIN_MEMORY
         )
     else:
-        train_loader = CatDataLoaders(additional_trainset, additional_pcts, cfg)
+        train_loader = CatDataLoaders(additional_trainset, additional_pcts, cfg, logger)
 
     valid_loaders = []
     for valid_dataset in valid_datasets:

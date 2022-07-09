@@ -100,3 +100,5 @@ openmmlab/demos_*/*
 openmmlab/*/*.txt
 openmmlab/*/*.json
 openmmlab/*/*.pkl
+
+smoother/COCO*/*

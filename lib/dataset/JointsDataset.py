@@ -195,7 +195,9 @@ class JointsDataset(Dataset):
             'rotation': r,
             'score': score
         }
-
+        if "track_id" in db_rec:
+            meta["track_id"] = db_rec["track_id"]
+            
         return input, target, target_weight, meta
 
     def select_data(self, db):
