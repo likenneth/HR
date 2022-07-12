@@ -47,7 +47,10 @@ def fliplr_joints(joints, joints_vis, width, matched_parts):
 
 
 def transform_preds(coords, center, scale, output_size):
-    # output_size is the size of heatmap
+    # coords, [#J, 2],  int coordinates in the heatmap resolution, [..., 0] range from 0 to W - 1, [..., 1] ranges from 0 to H - 1
+    # center, [2], np.array, in original image scalec, returned by the _xywh2cs() in finegym.py
+    # scale, [2], np.array, not necessary 0~1, returned by the _xywh2cs() in finegym.py
+    # output_size is the size of the output of HRNet, which is smaller than the input of HRNet, in format (w, h)
     target_coords = np.zeros(coords.shape)
     trans = get_affine_transform(center, scale, 0, output_size, inv=1)
     for p in range(coords.shape[0]):

@@ -47,6 +47,9 @@ def get_max_preds(batch_heatmaps):
 
 
 def get_final_preds(config, batch_heatmaps, center, scale):
+    # batch_heatmaps, [B, J, H=96, W=72], np.array
+    # center, [B, 2], np.array, in original image scalec, returned by the _xywh2cs() in finegym.py
+    # scale, [B, 2], np.array, not necessary 0~1, returned by the _xywh2cs() in finegym.py
     coords, maxvals = get_max_preds(batch_heatmaps)  
     # coords, [B, #J, 2], int coordinates in the heatmap resolution, [..., 0] range from 0 to W - 1, [..., 1] ranges from 0 to H - 1
     # maxvals, [B, #J, 1], the value < 1
@@ -78,5 +81,25 @@ def get_final_preds(config, batch_heatmaps, center, scale):
             coords[i], center[i], scale[i], [heatmap_width, heatmap_height]
         )
 
-    # preds, [B, #J, 2], float coordinates at original resolution, [..., 0] range from 0 to 1, [..., 1] ranges from 0 to 1
+    # preds, [B, #J, 2], float coordinates at original resolution
     return preds, maxvals
+
+def get_ori_coords(config, batch_heatmaps, center, scale):
+    # batch_heatmaps, [B, J, H=96, W=72], np.array
+    # center, [B, 2], np.array, in original image scalec, returned by the _xywh2cs() in finegym.py
+    # scale, [B, 2], np.array, not necessary 0~1, returned by the _xywh2cs() in finegym.py
+    heatmap_height = batch_heatmaps.shape[2]
+    heatmap_width = batch_heatmaps.shape[3]
+    nx, ny = np.meshgrid(np.arange(heatmap_height), np.arange(heatmap_width), indexing="ij")  # both [H, W], first < H, second < W
+    coords = np.stack([ny.flatten(), nx.flatten()], axis=-1)  # [HW, 2]
+    maxvals = batch_heatmaps.reshape(batch_heatmaps.shape[0], batch_heatmaps.shape[1], heatmap_height*heatmap_width) # [B, J, HW]
+
+    preds = []  # a list of [HW, 2]
+    # Transform back
+    for i in range(batch_heatmaps.shape[0]):
+        preds.append(transform_preds(coords, center[i], scale[i], [heatmap_width, heatmap_height]))
+
+    tbr = np.stack(preds, axis=0)
+    # tbr, [B, HW, 2], float coordinates at original resolution
+    # maxvals, [B, J, HW]
+    return tbr, maxvals

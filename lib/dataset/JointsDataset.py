@@ -166,11 +166,12 @@ class JointsDataset(Dataset):
                 c[0] = data_numpy.shape[1] - c[0] - 1
 
         trans = get_affine_transform(c, s, r, self.image_size)
+
         input = cv2.warpAffine(
-            data_numpy,
+            data_numpy,  # [360, 640] or some other sizes
             trans,
             (int(self.image_size[0]), int(self.image_size[1])),
-            flags=cv2.INTER_LINEAR)
+            flags=cv2.INTER_LINEAR)  # MODEL.IMAGE_SIZE = self.image_size now
 
         if self.transform:
             input = self.transform(input)
@@ -180,7 +181,6 @@ class JointsDataset(Dataset):
                 joints[i, 0:2] = affine_transform(joints[i, 0:2], trans)
 
         target, target_weight = self.generate_target(joints, joints_vis)
-
         target = torch.from_numpy(target)
         target_weight = torch.from_numpy(target_weight)
 

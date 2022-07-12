@@ -31,7 +31,7 @@ from utils.vis import save_debug_images
 import dataset
 import models
 
-DEBUG = True
+DEBUG = False
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Extract Keypoints with HRNet trained with HRNet repo for ONE video')

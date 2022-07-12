@@ -75,7 +75,7 @@ def save_batch_heatmaps(batch_image, batch_heatmaps, file_name,
                            3),
                           dtype=np.uint8)
 
-    preds, maxvals = get_max_preds(batch_heatmaps.detach().cpu().numpy())
+    preds, maxvals = get_max_preds(batch_heatmaps.detach().cpu().numpy())  # int between 0 and output size
 
     for i in range(batch_size):
         image = batch_image[i].mul(255)\
@@ -88,8 +88,8 @@ def save_batch_heatmaps(batch_image, batch_heatmaps, file_name,
                                     .byte()\
                                     .cpu().numpy()
 
-        resized_image = cv2.resize(image,
-                                   (int(heatmap_width), int(heatmap_height)))
+        # resize the image from HRNet input size to output size
+        resized_image = cv2.resize(image, (int(heatmap_width), int(heatmap_height)))
 
         height_begin = heatmap_height * i
         height_end = heatmap_height * (i + 1)
@@ -106,10 +106,8 @@ def save_batch_heatmaps(batch_image, batch_heatmaps, file_name,
 
             width_begin = heatmap_width * (j+1)
             width_end = heatmap_width * (j+2)
-            grid_image[height_begin:height_end, width_begin:width_end, :] = \
-                masked_image
-            # grid_image[height_begin:height_end, width_begin:width_end, :] = \
-            #     colored_heatmap*0.7 + resized_image*0.3
+            grid_image[height_begin:height_end, width_begin:width_end, :] = masked_image
+            # grid_image[height_begin:height_end, width_begin:width_end, :] = colored_heatmap*0.7 + resized_image*0.3
 
         grid_image[height_begin:height_end, 0:heatmap_width, :] = resized_image
 
