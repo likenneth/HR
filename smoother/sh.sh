@@ -8,7 +8,7 @@ then
 echo infer${pdd} has not been killed
 else
 srun --job-name=infer${pdd} --cpus-per-task=20 --gpus-per-node=2 --nodes=1 --ntasks=1 --time=3-00:00:00 --partition=learnfair \
-python avg_smooth.py --exp coco20 --save_path COCO20_avg_smooth \
+python avg_smooth.py --exp coco20 --save_path COCO20_avg_smooth_win5 --window 5 \
 --rank $X \
 --world 128 \
 FINEGYM.KPT_CONF_THRES 0.0 GPUS '(0,1)' &

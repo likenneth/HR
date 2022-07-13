@@ -7,8 +7,10 @@ import pprint
 import argparse
 import time
 import json
-from itertools import groupby
+from itertools import groupby, repeat
 from scipy.interpolate import LinearNDInterpolator
+from tqdm import tqdm
+import multiprocessing
 
 import numpy as np
 import torch
@@ -79,6 +81,26 @@ def parse_args():
 
     args = parser.parse_args()
     return args
+
+
+def worker(cfg, dense_grids, dense_ps):
+    X_ = dense_grids[:, :cfg.MODEL.HEATMAP_SIZE[0], 0].flatten()  # [NW]
+    Y_ = dense_grids[:, 0::cfg.MODEL.HEATMAP_SIZE[0], 1].flatten()  # [NH]
+    X, Y = np.meshgrid(X_, Y_)  # both [NH, NW]
+    denser_ps = np.zeros((cfg.MODEL.NUM_JOINTS, Y_.shape[0], X_.shape[0]), dtype=np.float32)  # [#J, NH, NW]
+    for j in range(cfg.MODEL.NUM_JOINTS):
+        # TODO: hack the following line to do smoothing with different weights to neighbouring frames
+        ps = dense_ps[:, j].flatten()  # [NHW]
+        # interpolator takes in N*H*W points in 2D original-resolution plane, and gives out N*NH*NW points
+        interp = LinearNDInterpolator(dense_grids.reshape(ps.shape[0], 2), ps)
+        denser_ps[j] = interp(X, Y)  # [NH, NW]
+
+    width = denser_ps.shape[-1]  # i.e., NW
+    heatmaps_reshaped = denser_ps.reshape((cfg.MODEL.NUM_JOINTS, -1))  # [#J, NHNW]
+    indices = np.argmax(heatmaps_reshaped, 1)  # [#J], index within NHNW to index from X_, Y_, which are the real float coordinates
+    maxvals = np.amax(heatmaps_reshaped, 1)  # [#J]
+    tbr = np.stack([X_[indices % width], Y_[np.floor(indices / width).astype(np.int64)], maxvals], axis=-1)  # [#J, 3]
+    return tbr
 
 
 def main():
@@ -240,11 +262,14 @@ def main():
         assert idx == num_samples == len(image_path), str(idx) + " " + str(num_samples) + " " + str(len(image_path))
 
         hw = int(args.window // 2)  # half window size
-        all_preds = np.zeros((num_samples, cfg.MODEL.NUM_JOINTS, 3), dtype=np.float32)  # [B, #J, 3]
+        
         # smoothing: generate a new all_preds from dense_grid_container ([[B, HW, 2]]) and p_container ([B, #J, HW])
+        
+        # Create the input list for parallizing
         idx = 0
-        for track_id, g in groupby(track_ids.tolist()):
-            
+        x1_container = []
+        x2_container = []
+        for track_id, g in groupby(track_ids.tolist()):            
             num_images = len(list(g))
             # TODO: extend to more interpolation methods from here: https://docs.scipy.org/doc/scipy/reference/interpolate.html#multivariate-interpolation
             for t in range(num_images):
@@ -252,28 +277,25 @@ def main():
                 end_frame = min(num_images - 1, t + hw)
                 actual_ws = end_frame - start_frame + 1  # i.e., N
                 # TODO: add ways to propagate coordinates between frames
-                dense_grids = dense_grid_container[int(idx + start_frame): int(idx + end_frame + 1)]  # [N=window size per, HW, 2]
-                X_ = dense_grids[:, :cfg.MODEL.HEATMAP_SIZE[0], 0].flatten()  # [NW]
-                Y_ = dense_grids[:, 0::cfg.MODEL.HEATMAP_SIZE[0], 1].flatten()  # [NH]
-                X, Y = np.meshgrid(X_, Y_)  # both [NH, NW]
-                denser_ps = np.zeros((cfg.MODEL.NUM_JOINTS, cfg.MODEL.HEATMAP_SIZE[1] * actual_ws, cfg.MODEL.HEATMAP_SIZE[0] * actual_ws), dtype=np.float32)  # [#J, NH, NW]
-                for j in range(cfg.MODEL.NUM_JOINTS):
-                    # TODO: hack the following line to do smoothing with different weights to neighbouring frames
-                    ps = p_container[idx + start_frame: idx + end_frame + 1, j].flatten()  # [NHW]
-                    # interpolator takes in N*H*W points in 2D original-resolution plane, and gives out N*NH*NW points
-                    interp = LinearNDInterpolator(dense_grids.reshape(ps.shape[0], 2), ps)
-                    denser_ps[j] = interp(X, Y)  # [NH, NW]
-
-                width = denser_ps.shape[-1]  # i.e., NW
-                heatmaps_reshaped = denser_ps.reshape((cfg.MODEL.NUM_JOINTS, -1))  # [#J, NHNW]
-                indices = np.argmax(heatmaps_reshaped, 1)  # [#J], index within NHNW to index from X_, Y_, which are the real float coordinates
-                maxvals = np.amax(heatmaps_reshaped, 1)  # [#J]
-                all_preds[idx + t, :, 0] = X_[indices % width]
-                all_preds[idx + t, :, 1] = Y_[np.floor(indices / width).astype(np.int64)]
-                all_preds[idx + t, :, 2] = maxvals
+                dense_grids = dense_grid_container[idx + start_frame: idx + end_frame + 1]  # [N=window size per, HW, 2]
+                dense_ps = p_container[idx + start_frame: idx + end_frame + 1]  # [N, #J, HW]
+                x1_container.append(dense_grids)
+                x2_container.append(dense_ps)
             idx += num_images
+        assert idx == num_samples == len(x1_container) == len(x2_container), str(idx) + " " + str(num_samples)
 
-        assert idx == num_samples == len(image_path), str(idx) + " " + str(num_samples) + " " + str(len(image_path))
+        # Run multi-processing
+        num_proc = max(1, multiprocessing.cpu_count() // 2)  # use all processors
+        p = multiprocessing.Pool(num_proc)
+        pbar = tqdm(total=num_samples, desc=f"=> using {num_proc} processors to do temporal smoothing...")
+        all_preds = []  # B-long list of [#J, 3]
+        for res in p.starmap(worker, zip(repeat(cfg), x1_container, x2_container, )):
+            all_preds.append(res)
+            pbar.update(1)
+
+        p.close()
+        p.join()
+        all_preds = np.stack(all_preds, axis=0)
 
         # dump results for this event
         with open(os.path.join(cfg.FINEGYM.PSEUDO_LABEL, json_path), "rb") as f:

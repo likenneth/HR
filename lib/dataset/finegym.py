@@ -121,7 +121,7 @@ class FineGymDataset(JointsDataset):
             bar.update(1)
         """
 
-        bar = tqdm(total=len(event_jsons) if not DEBUG else 100)
+        bar = tqdm(total=len(event_jsons) if not DEBUG else 100, disable=(len(event_jsons)==1))
         for res in p.starmap(worker, zip(repeat(self), event_jsons[:len(event_jsons) if not DEBUG else 100])):
             db.extend(res)
             bar.update(1)
