@@ -9,8 +9,6 @@ conda install seaborn
 Reproduce baseline:
 ```
 python tools/train.py --cfg experiments/coco/hrnet/coco.yaml --exp coco DATASET.PARTIAL 1.0
-
-python tools/test.py --cfg experiments/coco/hrnet/ochuman_test.yaml --exp coco TEST.MODEL_FILE output/coco/pose_hrnet/coco/final_state.pth
 ```
 
 # Kenneth's Project

@@ -47,6 +47,11 @@ def get_max_preds(batch_heatmaps):
 
 
 def get_final_preds(config, batch_heatmaps, center, scale):
+    singular = batch_heatmaps.ndim == 3  # disable batch processing
+    if singular:
+        batch_heatmaps = batch_heatmaps[None, ]
+        center = center[None, ]
+        scale = scale[None, ]
     # batch_heatmaps, [B, J, H=96, W=72], np.array
     # center, [B, 2], np.array, in original image scalec, returned by the _xywh2cs() in finegym.py
     # scale, [B, 2], np.array, not necessary 0~1, returned by the _xywh2cs() in finegym.py
@@ -82,12 +87,21 @@ def get_final_preds(config, batch_heatmaps, center, scale):
         )
 
     # preds, [B, #J, 2], float coordinates at original resolution
+    if singular:
+        preds = preds[0]
+        maxvals = maxvals[0]
     return preds, maxvals
 
 def get_ori_coords(config, batch_heatmaps, center, scale):
     # batch_heatmaps, [B, J, H=96, W=72], np.array
     # center, [B, 2], np.array, in original image scalec, returned by the _xywh2cs() in finegym.py
     # scale, [B, 2], np.array, not necessary 0~1, returned by the _xywh2cs() in finegym.py
+    singular = batch_heatmaps.ndim == 3  # disable batch processing
+
+    if singular:
+        batch_heatmaps = batch_heatmaps[None, ]
+        center = center[None, ]
+        scale = scale[None, ]
     heatmap_height = batch_heatmaps.shape[2]
     heatmap_width = batch_heatmaps.shape[3]
     nx, ny = np.meshgrid(np.arange(heatmap_height), np.arange(heatmap_width), indexing="ij")  # both [H, W], first < H, second < W
@@ -102,4 +116,8 @@ def get_ori_coords(config, batch_heatmaps, center, scale):
     tbr = np.stack(preds, axis=0)
     # tbr, [B, HW, 2], float coordinates at original resolution
     # maxvals, [B, J, HW]
+    if singular:
+        tbr = tbr[0]
+        maxvals = maxvals[0]
+
     return tbr, maxvals

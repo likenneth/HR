@@ -13,6 +13,7 @@ import math
 import numpy as np
 import torchvision
 import cv2
+import torch
 
 from core.inference import get_max_preds
 
@@ -58,6 +59,12 @@ def save_batch_heatmaps(batch_image, batch_heatmaps, file_name,
     batch_heatmaps: ['batch_size, num_joints, height, width]
     file_name: saved file name
     '''
+
+    if isinstance(batch_image, list):
+        batch_image = torch.tensor(np.stack(batch_image, axis=0))
+    if isinstance(batch_heatmaps, list):
+        batch_heatmaps = torch.tensor(np.stack(batch_heatmaps, axis=0))
+
     if normalize:
         batch_image = batch_image.clone()
         min = float(batch_image.min())
@@ -114,8 +121,7 @@ def save_batch_heatmaps(batch_image, batch_heatmaps, file_name,
     cv2.imwrite(file_name, grid_image)
 
 
-def save_debug_images(config, input, meta, target, joints_pred, output,
-                      prefix):
+def save_debug_images(config, input, meta=None, target=None, joints_pred=None, output=None, prefix=None):
     if not config.DEBUG.DEBUG:
         return
 
@@ -129,11 +135,11 @@ def save_debug_images(config, input, meta, target, joints_pred, output,
             input, joints_pred, meta['joints_vis'],
             '{}_pred.jpg'.format(prefix)
         )
-    if config.DEBUG.SAVE_HEATMAPS_GT:
+    if config.DEBUG.SAVE_HEATMAPS_GT and target is not None:
         save_batch_heatmaps(
             input, target, '{}_hm_gt.jpg'.format(prefix)
         )
-    if config.DEBUG.SAVE_HEATMAPS_PRED:
+    if config.DEBUG.SAVE_HEATMAPS_PRED and output is not None:
         save_batch_heatmaps(
             input, output, '{}_hm_pred.jpg'.format(prefix)
         )

@@ -24,20 +24,6 @@ DATASET:
   TRAIN_SET: 'train2017'
   PARTIAL: 0.2
   TEST_BBOX_FILE: 'data/coco/person_detection_results/COCO_val2017_detections_AP_H_56_person.json'
-FINEGYM:
-  PCT: 20
-  PSEUDO_LABEL: 'smoother/COCO20_wo_smooth'
-  BB_CONF_THRES: 0.8
-  BB_SIZE_THRES: 0
-  KPT_CONF_THRES: 0.5
-  COLOR_RGB: true
-  DATASET: 'finegym'
-  FLIP: true
-  NUM_JOINTS_HALF_BODY: 8
-  PROB_HALF_BODY: 0.3
-  ROOT: 'data/finegym'
-  ROT_FACTOR: 45
-  SCALE_FACTOR: 0.35
 OCHUMAN:
   COLOR_RGB: true
   DATASET: 'ochuman'
@@ -59,11 +45,11 @@ MODEL:
   PRETRAINED: 'models/pytorch/imagenet/hrnet_w48-8ef0771d.pth'
   TARGET_TYPE: gaussian
   IMAGE_SIZE:
-  - 288
-  - 384
+  - 192
+  - 256
   HEATMAP_SIZE:
-  - 72
-  - 96
+  - 48
+  - 64
   SIGMA: 3
   EXTRA:
     PRETRAINED_LAYERS:
@@ -123,7 +109,6 @@ LOSS:
 TRAIN:
   BATCH_SIZE_PER_GPU: 48
   SHUFFLE: true
-  TX: 1
   BEGIN_EPOCH: 0
   END_EPOCH: 210
   OPTIMIZER: adam
@@ -150,8 +135,8 @@ TEST:
   POST_PROCESS: true
   SHIFT_HEATMAP: true
 DEBUG:
-  DEBUG: true
+  DEBUG: false
   SAVE_BATCH_IMAGES_GT: false
   SAVE_BATCH_IMAGES_PRED: false
-  SAVE_HEATMAPS_GT: true
-  SAVE_HEATMAPS_PRED: true
+  SAVE_HEATMAPS_GT: false
+  SAVE_HEATMAPS_PRED: false

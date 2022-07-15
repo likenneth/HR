@@ -11,6 +11,7 @@ from itertools import groupby, repeat
 from scipy.interpolate import LinearNDInterpolator
 from tqdm import tqdm
 import multiprocessing
+from numba import njit
 
 import numpy as np
 import torch
@@ -82,8 +83,10 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-
+@njit(parallel=True)
 def worker(cfg, dense_grids, dense_ps):
+    # dense_grids, [N=window size per, HW, 2]
+    # dense_ps, [N, #J, HW]
     X_ = dense_grids[:, :cfg.MODEL.HEATMAP_SIZE[0], 0].flatten()  # [NW]
     Y_ = dense_grids[:, 0::cfg.MODEL.HEATMAP_SIZE[0], 1].flatten()  # [NH]
     X, Y = np.meshgrid(X_, Y_)  # both [NH, NW]
@@ -285,13 +288,11 @@ def main():
         assert idx == num_samples == len(x1_container) == len(x2_container), str(idx) + " " + str(num_samples)
 
         # Run multi-processing
-        num_proc = max(1, multiprocessing.cpu_count() // 2)  # use all processors
+        num_proc = max(1, multiprocessing.cpu_count() - 1)  # use all processors
         p = multiprocessing.Pool(num_proc)
-        pbar = tqdm(total=num_samples, desc=f"=> using {num_proc} processors to do temporal smoothing...")
         all_preds = []  # B-long list of [#J, 3]
-        for res in p.starmap(worker, zip(repeat(cfg), x1_container, x2_container, )):
+        for res in p.starmap(worker, tqdm(zip(repeat(cfg), x1_container, x2_container, ), total=num_samples, desc=f"=> using {num_proc} processors for {json_path}")):
             all_preds.append(res)
-            pbar.update(1)
 
         p.close()
         p.join()

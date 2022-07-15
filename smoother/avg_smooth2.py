@@ -1,5 +1,7 @@
 import os
 import sys
+
+from matplotlib.colors import to_rgba
 # sys.path.insert(0, "../tools")
 os.chdir("..")
 
@@ -7,6 +9,11 @@ import pprint
 import argparse
 import time
 import json
+from itertools import groupby, repeat
+from scipy.interpolate import LinearNDInterpolator
+from tqdm import tqdm
+import multiprocessing
+from numba import njit
 
 import numpy as np
 import torch
@@ -24,14 +31,15 @@ from core.loss import JointsMSELoss
 from utils.utils import create_logger
 from core.function import AverageMeter
 from core.evaluate import accuracy
-from core.inference import get_final_preds
+from core.inference import get_final_preds, get_ori_coords
 from utils.transforms import flip_back
 from utils.vis import save_debug_images
 
 import dataset
 import models
 
-DEBUG = False
+DEBUG = True
+VIS = 100
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Extract Keypoints with HRNet trained with HRNet repo for ONE video')
@@ -73,10 +81,42 @@ def parse_args():
     parser.add_argument('--rank', type=int, required=True)
     parser.add_argument('--world', type=int, required=True)
     parser.add_argument('--save_path', type=str, required=True)
+    parser.add_argument('--window', type=int, required=True)
 
     args = parser.parse_args()
     return args
 
+def weight_func1(distance):
+    # distance, int, between this frame and t
+    return 1 / (abs(distance) + 1)
+
+# @njit(parallel=True)
+def worker(cfg, boxes, outputs, weights):
+    # boxes, [N=window size per, 6], np.array
+    # outputs, an N-long list of [#J, W=96, H=72], np.array
+    # weights, a list of N long, sums not necessarily to 1, only has one == 1 inside
+    # returned, [#J, W, H], heatmap that sums to 1
+    # TODO: extend to more interpolation methods from here: https://docs.scipy.org/doc/scipy/reference/interpolate.html#multivariate-interpolation
+    t = weights.index(1)  # the index of the main frame to process, out of 0 to N - 1
+    dense_grids, ps =  get_ori_coords(cfg, outputs[t], boxes[t, 0:2], boxes[t, 2:4])  # [HW, 2], [J, HW], global, (to left, from top) = (x, y), when indexing, should use [y, x]
+
+    X_ = dense_grids[:cfg.MODEL.HEATMAP_SIZE[0], 0].flatten()  # [W]
+    Y_ = dense_grids[0::cfg.MODEL.HEATMAP_SIZE[0], 1].flatten()  # [H]
+    X, Y = np.meshgrid(X_, Y_)  # both [H, W]
+
+    tbr = np.zeros(outputs[0].shape)
+    for i, weight in enumerate(weights):
+        if i == t:  # is main
+            tbr += weight * outputs[i]
+        else:
+            # map non-main frmae boxes to the global coordinates --> get an interpolator --> query with main frame grid
+            dense_grids_per, ps_per =  get_ori_coords(cfg, outputs[i], boxes[i, 0:2], boxes[i, 2:4])  # [HW, 2], [J, HW], global, (to left, from top) = (x, y), when indexing, should use [y, x]
+            tba = np.zeros(outputs[0].shape, dtype=np.float32)  # [#J, H, W]
+            for j in range(cfg.MODEL.NUM_JOINTS):
+                interp = LinearNDInterpolator(dense_grids_per, ps_per[j])
+                tba[j] = interp(X, Y)
+            tbr += weight * tba
+    return tbr#  / tbr.sum(axis=-1).sum(axis=-1)[:, None, None]
 
 def main():
     args = parse_args()
@@ -155,15 +195,14 @@ def main():
         # switch to evaluate mode
         model.eval()
 
-        num_samples = len(val_dataset)
-        all_preds = np.zeros(
-            (num_samples, cfg.MODEL.NUM_JOINTS, 3),
-            dtype=np.float32
-        )
-        all_boxes = np.zeros((num_samples, 6))
-        track_ids = np.zeros((num_samples, ))
-        image_path = []
         idx = 0
+        # containers
+        num_samples = len(val_dataset)
+        all_boxes = np.zeros((num_samples, 6))
+        track_ids = np.zeros((num_samples, ))  # a list of track ids starting 0 with different lengths
+        input_container = []  # a list of CPU torch tensors
+        output_container = []  # a list of numpy arrays
+
         with torch.no_grad():
             end = time.time()
             for i, (input, target, target_weight, meta) in enumerate(val_loader):
@@ -203,8 +242,7 @@ def main():
                 num_images = input.size(0)
                 # measure accuracy and record loss
                 losses.update(loss.item(), num_images)
-                _, avg_acc, cnt, pred = accuracy(output.cpu().numpy(),
-                                                target.cpu().numpy())
+                _, avg_acc, cnt, pred = accuracy(output.cpu().numpy(), target.cpu().numpy())
 
                 acc.update(avg_acc, cnt)
 
@@ -217,27 +255,82 @@ def main():
                 score = meta['score'].numpy()
                 track_id = meta['track_id'].numpy()
 
-                preds, maxvals = get_final_preds(cfg, output.clone().cpu().numpy(), c, s)
+                # preds, maxvals = get_final_preds(cfg, output.clone().cpu().numpy(), c, s)  # output, [B, J, H, W]
 
-                if DEBUG and i == 0:
-                    prefix = os.path.join(args.save_path, f"{json_path[:-5]}_avg_{i}")
-                    save_debug_images(cfg, input, meta, target, pred*4, output, prefix)
-
-                all_preds[idx:idx + num_images, :, 0:2] = preds[:, :, 0:2]
-                all_preds[idx:idx + num_images, :, 2:3] = maxvals
-                # double check this all_boxes parts
                 all_boxes[idx:idx + num_images, 0:2] = c[:, 0:2]
                 all_boxes[idx:idx + num_images, 2:4] = s[:, 0:2]
-                all_boxes[idx:idx + num_images, 4] = np.prod(s*200, 1)
+                all_boxes[idx:idx + num_images, 4] = np.prod(s*200, 1)  # area
                 all_boxes[idx:idx + num_images, 5] = score
                 track_ids[idx:idx + num_images] = track_id
-                image_path.extend(meta['image'])
-
+                input_container.extend([_[0].numpy() for _  in torch.split(input.detach().cpu(), split_size_or_sections=1, dim=0)])
+                output_container.extend([_[0].numpy() for _ in torch.split(output.detach().cpu(), split_size_or_sections=1, dim=0)])
                 idx += num_images
             
-        assert idx == num_samples == len(image_path), str(idx) + " " + str(num_samples) + " " + str(len(image_path))
+        assert idx == num_samples == len(input_container) == len(output_container), str(idx) + " " + str(num_samples) + " " + str(len(input_container)) + " " + str(len(output_container))
+        print("=> loop 1 finished")
+        hw = int(args.window // 2)  # half window size
+        
+        # Create the input list for parallizing
+        idx = 0
+        x1_container = []
+        x2_container = []
+        x3_container = []
+        for track_id, g in groupby(track_ids.tolist()):            
+            num_images = len(list(g))
+            for t in range(num_images):
+                start_frame = max(0, t - hw)  # index of the start frame within this track
+                end_frame = min(num_images - 1, t + hw)
+                actual_ws = end_frame - start_frame + 1  # i.e., N
+                # TODO: add ways to propagate coordinates between frames
+                boxes = all_boxes[idx + start_frame: idx + end_frame + 1]  # [N=window size per, 6]
+                outputs = output_container[idx + start_frame: idx + end_frame + 1]  # [N, #J, W=96, H=72]
+                x1_container.append(boxes)
+                x2_container.append(outputs)
+                x3_container.append([weight_func1(t - ttt) for ttt in range(start_frame, end_frame + 1)])
+            idx += num_images
+        assert idx == num_samples == len(x1_container) == len(x2_container) == len(x3_container), str(idx) + " " + str(num_samples) + " " + str(len(x1_container)) + " " + str(len(x2_container)) + " " + str(len(x3_container))
+        print("=> loop 2 finished")
 
-        val_dataset.dump_with_updated(all_preds, os.path.join(args.save_path, json_path))
+        # Run multi-processing
+        num_proc = max(1, multiprocessing.cpu_count() - 1)  # use all processors
+        p = multiprocessing.Pool(num_proc)
+        refined_output_container = []  # a list of numpy arrays, [#J, W, H]
+        for refined_output in p.starmap(worker, tqdm(zip(repeat(cfg), x1_container, x2_container, x3_container), disable=False, total=num_samples, desc=f"=> using {num_proc} processors for {json_path}")):
+            refined_output_container.append(refined_output)
+        p.close()
+        p.join()
+        print("=> loop 3 finished")
+
+        all_preds = []  # B-long list of [#J, 3]
+        for idx, (refined_output, boxes) in enumerate(zip(refined_output_container, all_boxes)):
+            c = boxes[0:2]
+            s = boxes[2:4]
+            pred, maxvals = get_final_preds(cfg, refined_output, c, s)  # [#J, 2], [#J, 1]
+            all_preds.append(np.concatenate([pred, maxvals], axis=-1))
+            if VIS and idx % VIS == hw + 1:
+                prefix = os.path.join(args.save_path, f"{json_path[:-5]}_avg2_{idx // VIS}")
+                # note that the input to debug() is pred not preds, pred is in relative coordinates, preds is in global coordinates
+                save_debug_images(
+                    cfg, 
+                    input=input_container[idx - hw: idx + hw + 1] + [input_container[idx], ],  # window + 1 rows, with the bottom row being the main image
+                    meta=None, target=None, joints_pred=None, 
+                    output=output_container[idx - hw: idx + hw + 1] + [refined_output, ], 
+                    prefix=prefix
+                )  # refined_output, [B, #J, W=96, H=72], tensor
+        all_preds = np.stack(all_preds, axis=0)
+        print("=> loop 4 finished")
+
+        # dump results for this event
+        with open(os.path.join(cfg.FINEGYM.PSEUDO_LABEL, json_path), "rb") as f:
+            video_annos = json.load(f)  # 'images', 'annotations', 'categories'
+
+        assert num_samples == len(video_annos["annotations"]), str(num_samples) + " " + str(len(video_annos["annotations"]))
+        for idx in range(num_samples):  # because the dataloader does not shuffle
+            video_annos["annotations"][idx]["keypoints"] = all_preds[idx].flatten().tolist()
+            video_annos["annotations"][idx]["scores"] = all_preds[idx, -1].flatten().tolist()
+
+        with open(os.path.join(args.save_path, json_path), "w") as f:
+            json.dump(video_annos, f)
 
 if __name__ == '__main__':
     main()

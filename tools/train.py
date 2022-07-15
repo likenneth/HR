@@ -272,7 +272,7 @@ def main():
     best_model = False
     last_epoch = -1
     optimizer = get_optimizer(cfg, model)
-    begin_epoch = cfg.TRAIN.BEGIN_EPOCH
+    begin_epoch = cfg.TRAIN.BEGIN_EPOCH * cfg.TRAIN.TX
     checkpoint_file = os.path.join(
         final_output_dir, 'checkpoint.pth'
     )
@@ -290,11 +290,11 @@ def main():
             checkpoint_file, checkpoint['epoch']))
 
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        optimizer, cfg.TRAIN.LR_STEP, cfg.TRAIN.LR_FACTOR,
+        optimizer, [_ * cfg.TRAIN.TX for _ in cfg.TRAIN.LR_STEP], cfg.TRAIN.LR_FACTOR,
         last_epoch=last_epoch
     )
 
-    for epoch in range(begin_epoch, cfg.TRAIN.END_EPOCH):
+    for epoch in range(begin_epoch, cfg.TRAIN.END_EPOCH * cfg.TRAIN.TX):
         lr_scheduler.step()
 
         # train for one epoch

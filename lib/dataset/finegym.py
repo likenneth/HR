@@ -14,6 +14,7 @@ import logging
 import os
 import pickle
 import string
+import json
 from tqdm import tqdm
 from itertools import repeat
 
@@ -93,6 +94,7 @@ class FineGymDataset(JointsDataset):
 
         self.kpt_conf_thres = cfg.FINEGYM.KPT_CONF_THRES  # only use label with higher confidence
         self.bb_conf_thres = cfg.FINEGYM.BB_CONF_THRES  # only use label with higher confidence
+        self.bb_size_thres = cfg.FINEGYM.BB_SIZE_THRES  # avoid using too small persons
 
         """  # taking some 0-127 format returned from mmpose
         action_annotations = []
@@ -103,36 +105,31 @@ class FineGymDataset(JointsDataset):
         # 'time_stamp', 'action_name', 'bb', 'bb_score', 'img_shape', 'original_shape', 'total_frames', 'num_person_raw', 'keypoint', 'keypoint_score'
         # 'keypoint': [max #person, #frame, 17, 2], use [0, 0] to fill persons not appearing
         """
-
+        db = []
         if json_index == -1:
             event_jsons = [os.path.join(cfg.FINEGYM.PSEUDO_LABEL, _) for _ in os.listdir(cfg.FINEGYM.PSEUDO_LABEL)]  # 12818 json paths
+            num_proc = max(1, multiprocessing.cpu_count() // 2)  # use all processors
+            p = multiprocessing.Pool(num_proc)
+            print(f"=> using {num_proc} processors to load FineGym...")
+            """  # taking some 0-127 format returned from mmpose  
+            bar = tqdm(total=len(action_annotations) if not DEBUG else 100)
+            for res in p.starmap(worker, zip(repeat(self), action_annotations[:len(action_annotations) if not DEBUG else 100])):
+                db.extend(res)
+                bar.update(1)
+            """
+
+            bar = tqdm(total=len(event_jsons) if not DEBUG else 100, disable=(len(event_jsons)==1))
+            for res in p.starmap(worker, zip(repeat(self), event_jsons[:len(event_jsons) if not DEBUG else 100])):
+                db.extend(res)
+                bar.update(1)
+            p.close()
+            p.join()
+        elif isinstance(json_index, str):
+            db.extend(self.load_annotation_for_event(os.path.join(cfg.FINEGYM.PSEUDO_LABEL, json_index)))
         else:
-            if isinstance(json_index, str):
-                json_index = [json_index, ]
-            event_jsons = [os.path.join(cfg.FINEGYM.PSEUDO_LABEL, _) for _ in sorted(list(os.listdir(cfg.FINEGYM.PSEUDO_LABEL))) if _ in json_index]
-        db = []
-        num_proc = max(1, multiprocessing.cpu_count() // 2)  # use all processors
-        p = multiprocessing.Pool(num_proc)
-        print(f"=> using {num_proc} processors to load FineGym...")
-        """  # taking some 0-127 format returned from mmpose  
-        bar = tqdm(total=len(action_annotations) if not DEBUG else 100)
-        for res in p.starmap(worker, zip(repeat(self), action_annotations[:len(action_annotations) if not DEBUG else 100])):
-            db.extend(res)
-            bar.update(1)
-        """
+            raise NotImplemented
 
-        bar = tqdm(total=len(event_jsons) if not DEBUG else 100, disable=(len(event_jsons)==1))
-        for res in p.starmap(worker, zip(repeat(self), event_jsons[:len(event_jsons) if not DEBUG else 100])):
-            db.extend(res)
-            bar.update(1)
-
-        # for event in tqdm(event_jsons):
-        #     db.extend(self.load_annotation_for_event(event))
-
-        p.close()
-        p.join()
         self.db = db
-
         logger.info('=> load {} samples for {}'.format(len(self.db), self.name))
 
     def load_annotation_for_event(self, event):
@@ -150,11 +147,30 @@ class FineGymDataset(JointsDataset):
         _, event_s, event_e, _ = one_frame_name[12:].split("_")
         event_folder = os.path.join(self.root, "processed_frames", "_".join([youtube_name, "E", event_s, event_e]))
 
+        trash_track_ids = []
         for anno in read["annotations"]:
-            # each a dict with keys: ['image_id', 'keypoints', 'scores', 'track_id', 'bbox', 'category_id']
-            kpt = np.array(anno["keypoints"]).reshape(self.num_joints, 3)
+            if "bbox" not in anno:  # some of the returned from Corrtrack is propagated and does not have bb
+                kpt = np.array(anno["keypoints"]).reshape(self.num_joints, 3)
+                visible_kpts = kpt[kpt[:, -1] > 0]  # [<=17, 3], invisible joints have coordinates 0
+                x_min = visible_kpts[..., 0].min(axis=-1)  # []
+                x_max = visible_kpts[..., 0].max(axis=-1)  # []
+                y_min = visible_kpts[..., 1].min(axis=-1)  # []
+                y_max = visible_kpts[..., 1].max(axis=-1)  # []
+                x1, y1, w, h = x_min, y_min, x_max - x_min, y_max - y_min
+                anno["bbox"] = [x1.item(), y1.item(), w.item(), h.item()]           
+
+            area = anno['bbox'][2] * anno['bbox'][3]
+            if area == 0.:
+                trash_track_ids.append(anno["track_id"])
             # in corrtrack output, all bb has confidence = 1, only threshold with kpt confidence
-            if np.any(kpt[:, -1] > self.kpt_conf_thres):
+
+        read["annotations"] = [_ for _ in read["annotations"] if _["track_id"] not in trash_track_ids]
+        self.read = read  # trimmed json read, does not work in multi json case, only for inferecne
+
+        for anno in read["annotations"]:
+            kpt = np.array(anno["keypoints"]).reshape(self.num_joints, 3)
+            area = anno['bbox'][2] * anno['bbox'][3]
+            if np.any(kpt[:, -1] > self.kpt_conf_thres) and area > self.bb_size_thres:  # filter bb size by retraining needs
                 joints_3d = np.zeros((self.num_joints, 3), dtype=np.float)
                 joints_3d[:, :2] = kpt[:, :2]
                 joints_3d_vis = np.zeros((self.num_joints, 3), dtype=np.float)
@@ -173,6 +189,11 @@ class FineGymDataset(JointsDataset):
                     'imgnum': 0,
                     'track_id': anno["track_id"], 
                 })
+            else:
+                if not np.any(kpt[:, -1] > self.kpt_conf_thres):
+                    print("dies by kpt conf")
+                else:
+                    print(area)
         return tbr
 
     """  # taking some 0-127 format returned from mmpose  
@@ -230,3 +251,13 @@ class FineGymDataset(JointsDataset):
             scale = scale * 1.25
 
         return center, scale
+
+    def dump_with_updated(self, all_preds, path):
+        assert all_preds.shape[0] == len(self.read["annotations"]), str(all_preds.shape[0]) + " " + str(len(self.read["annotations"]))
+        num_samples = all_preds.shape[0]
+        for idx in range(num_samples):  # because the dataloader does not shuffle
+            self.read["annotations"][idx]["keypoints"] = all_preds[idx].flatten().tolist()
+            self.read["annotations"][idx]["scores"] = all_preds[idx, -1].flatten().tolist()
+        with open(path, "w") as f:
+            json.dump(self.read, f)
+        print(f"Updated keypoints dumped to {path}")
