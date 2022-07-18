@@ -132,10 +132,9 @@ def main():
     json_paths = [_ for _ in os.listdir(dscfg.PSEUDO_LABEL) if _.endswith(".json")][args.rank::args.world]
     args.save_path = os.path.join("smoother", args.save_path)
 
-    if os.path.exists(args.save_path) and os.path.isdir(args.save_path):
-        shutil.rmtree(args.save_path)
-        print(f"Removing existing {args.save_path}")
-    os.makedirs(args.save_path, exist_ok=True)
+    # if os.path.exists(args.save_path) and os.path.isdir(args.save_path):
+    #     shutil.rmtree(args.save_path)
+    #     print(f"Removing existing {args.save_path}")
     os.makedirs(args.save_path, exist_ok=True)
 
     logger, final_output_dir, tb_log_dir = create_logger(cfg, args.cfg, 'avg_smooth', enforced_name=args.exp)

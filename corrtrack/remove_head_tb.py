@@ -7,9 +7,12 @@ import json
 import shutil
 from tqdm import tqdm
 
-exp_name = "corrtrack_swin"  # OR corrrtack_baseline
-input_dir = f"/private/home/keli22/HR/corrtrack/baselines/outputs/tracking_baselines/{exp_name}/pose_3_stage_corr_tracking/jt_thres_0.1_duplicate_ratio_0.6_oks_0.2_corr_threshold_0.3_win_len_2_min_keypoints_2_min_track_len_3_break_tracks_True_pp_joint_threshold_0.3/sequences/val"
-output_dir = f"/private/home/keli22/HR/corrtrack/baselines/outputs/tracking_baselines/{exp_name}/head_tb_removed"
+# exp_name = "corrtrack_swin"  # OR corrrtack_baseline
+# input_dir = f"/private/home/keli22/HR/corrtrack/baselines/outputs/tracking_baselines/{exp_name}/pose_3_stage_corr_tracking/jt_thres_0.1_duplicate_ratio_0.6_oks_0.2_corr_threshold_0.3_win_len_2_min_keypoints_2_min_track_len_3_break_tracks_True_pp_joint_threshold_0.3/sequences/val"
+# output_dir = f"/private/home/keli22/HR/corrtrack/baselines/outputs/tracking_baselines/{exp_name}/head_tb_removed"
+
+input_dir = "/private/home/keli22/HR/smoother/PT21_wo_smooth"
+output_dir = "/private/home/keli22/HR/smoother/PT21_wo_smooth/head_removed"
 
 if os.path.exists(output_dir) and os.path.isdir(output_dir):
     shutil.rmtree(output_dir)

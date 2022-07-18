@@ -253,11 +253,12 @@ class FineGymDataset(JointsDataset):
         return center, scale
 
     def dump_with_updated(self, all_preds, path):
+        # all_preds, [num_samples, 17, 3]
         assert all_preds.shape[0] == len(self.read["annotations"]), str(all_preds.shape[0]) + " " + str(len(self.read["annotations"]))
         num_samples = all_preds.shape[0]
         for idx in range(num_samples):  # because the dataloader does not shuffle
             self.read["annotations"][idx]["keypoints"] = all_preds[idx].flatten().tolist()
-            self.read["annotations"][idx]["scores"] = all_preds[idx, -1].flatten().tolist()
+            self.read["annotations"][idx]["scores"] = all_preds[idx, :, -1].flatten().tolist()
         with open(path, "w") as f:
             json.dump(self.read, f)
         print(f"Updated keypoints dumped to {path}")

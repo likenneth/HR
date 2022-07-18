@@ -14,3 +14,6 @@
 # python tools/train.py --exp coco20_fgswcthr_wo1000bb --cfg experiments/coco/hrnet/coco_fgswcthr.yaml FINEGYM.PCT 32 FINEGYM.KPT_CONF_THRES 0.9 FINEGYM.BB_SIZE_THRES 1000 &
 
 # python tools/test.py --exp coco --cfg experiments/coco/hrnet/coco_scale2.yaml DATASET.PARTIAL 1.0 GPUS '(0,1)'
+python tools/finetune_pt.py --exp posetrack --cfg experiments/coco/hrnet/coco_ptswcthr.yaml POSETRACK.PSEUDO_LABEL 'data/posetrack/posetrack_data' \
+TRAIN.LR 0.0001
+# GPUS '(0,1)' POSETRACK.PARTIAL 0.02

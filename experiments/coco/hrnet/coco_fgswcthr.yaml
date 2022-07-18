@@ -24,7 +24,7 @@ DATASET:
   TRAIN_SET: 'train2017'
   PARTIAL: 0.2
   TEST_BBOX_FILE: 'data/coco/person_detection_results/COCO_val2017_detections_AP_H_56_person.json'
-POSETRACK:
+FINEGYM:
   PCT: 20
   PSEUDO_LABEL: 'smoother/COCO20_wo_smooth'
   BB_CONF_THRES: 0.8

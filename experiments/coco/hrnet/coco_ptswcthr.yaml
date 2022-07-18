@@ -38,6 +38,7 @@ POSETRACK:
   ROOT: 'data/posetrack'
   ROT_FACTOR: 45
   SCALE_FACTOR: 0.35
+  PARTIAL: 1.0
 OCHUMAN:
   COLOR_RGB: true
   DATASET: 'ochuman'

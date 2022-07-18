@@ -96,18 +96,14 @@ class PoseTrack21Dataset(JointsDataset):
         self.bb_conf_thres = cfg.POSETRACK.BB_CONF_THRES  # only use label with higher confidence
         self.bb_size_thres = cfg.POSETRACK.BB_SIZE_THRES  # avoid using too small persons
 
-        """  # taking some 0-127 format returned from mmpose
-        action_annotations = []
-        for part_file in os.listdir(cfg.POSETRACK.PSEUDO_LABEL):
-            with open(os.path.join(cfg.POSETRACK.PSEUDO_LABEL, part_file), "rb") as input_file:
-                read = pickle.load(input_file)
-                action_annotations.extend(read)
-        # 'time_stamp', 'action_name', 'bb', 'bb_score', 'img_shape', 'original_shape', 'total_frames', 'num_person_raw', 'keypoint', 'keypoint_score'
-        # 'keypoint': [max #person, #frame, 17, 2], use [0, 0] to fill persons not appearing
-        """
+        if is_train:
+            self.json_dir = os.path.join(cfg.POSETRACK.PSEUDO_LABEL, "train")
+        else:
+            self.json_dir = os.path.join(cfg.POSETRACK.PSEUDO_LABEL, "val")
+
         db = []
         if json_index == -1:
-            event_jsons = [os.path.join(cfg.POSETRACK.PSEUDO_LABEL, _) for _ in os.listdir(cfg.POSETRACK.PSEUDO_LABEL)]  # 12818 json paths
+            event_jsons = [os.path.join(self.json_dir, _) for _ in os.listdir(self.json_dir)]  # 12818 json paths
             num_proc = max(1, multiprocessing.cpu_count() // 2)  # use all processors
             p = multiprocessing.Pool(num_proc)
             print(f"=> using {num_proc} processors to load FineGym...")
@@ -125,11 +121,12 @@ class PoseTrack21Dataset(JointsDataset):
             p.close()
             p.join()
         elif isinstance(json_index, str):
-            db.extend(self.load_annotation_for_event(os.path.join(cfg.POSETRACK.PSEUDO_LABEL, json_index)))
+            db.extend(self.load_annotation_for_event(os.path.join(self.json_dir, json_index)))
         else:
             raise NotImplemented
 
         self.db = db
+        self.db = self.db[:round(len(self.db) * cfg.POSETRACK.PARTIAL)]
         logger.info('=> load {} samples for {}'.format(len(self.db), self.name))
 
     def load_annotation_for_event(self, event):
@@ -190,10 +187,11 @@ class PoseTrack21Dataset(JointsDataset):
                     'track_id': anno["track_id"], 
                 })
             else:
-                if not np.any(kpt[:, -1] > self.kpt_conf_thres):
-                    print("dies by kpt conf")
-                else:
-                    print("dies by area too small", area)
+                pass
+                # if not np.any(kpt[:, -1] > self.kpt_conf_thres):
+                #     print("dies by kpt conf")
+                # else:
+                #     print("dies by area too small", area)
         return tbr
 
     """  # taking some 0-127 format returned from mmpose  
@@ -253,11 +251,12 @@ class PoseTrack21Dataset(JointsDataset):
         return center, scale
 
     def dump_with_updated(self, all_preds, path):
+        # all_preds, [num_samples, 17, 3]
         assert all_preds.shape[0] == len(self.read["annotations"]), str(all_preds.shape[0]) + " " + str(len(self.read["annotations"]))
         num_samples = all_preds.shape[0]
         for idx in range(num_samples):  # because the dataloader does not shuffle
             self.read["annotations"][idx]["keypoints"] = all_preds[idx].flatten().tolist()
-            self.read["annotations"][idx]["scores"] = all_preds[idx, -1].flatten().tolist()
+            self.read["annotations"][idx]["scores"] = all_preds[idx, :, -1].flatten().tolist()
         with open(path, "w") as f:
             json.dump(self.read, f)
         print(f"Updated keypoints dumped to {path}")
