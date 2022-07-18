@@ -36,12 +36,12 @@ DEBUG=False
 def worker(fgds, event):
     return fgds.load_annotation_for_event(event)
 
-class FineGymDataset(JointsDataset):
+class PoseTrack21Dataset(JointsDataset):
     '''
     "keypoints": {
         0: "nose",
-        1: "left_eye",
-        2: "right_eye",
+        1: "head_bottom", !!!
+        2: "head_top",
         3: "left_ear",
         4: "right_ear",
         5: "left_shoulder",
@@ -63,7 +63,7 @@ class FineGymDataset(JointsDataset):
     '''
     def __init__(self, cfg, root, image_set, is_train, transform=None, json_index=-1):
         super().__init__(cfg, root, image_set, is_train, transform)
-        self.name = "FineGym"
+        self.name = "PoseTrack21"
         # self.nms_thre = cfg.TEST.NMS_THRE
         # self.image_thre = cfg.TEST.IMAGE_THRE
         # self.soft_nms = cfg.TEST.SOFT_NMS
@@ -78,7 +78,7 @@ class FineGymDataset(JointsDataset):
         self.fps = 25
 
         self.num_joints = 17
-        self.flip_pairs = [[1, 2], [3, 4], [5, 6], [7, 8],
+        self.flip_pairs = [[5, 6], [7, 8],
                            [9, 10], [11, 12], [13, 14], [15, 16]]
         self.parent_ids = None
         self.upper_body_ids = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
@@ -92,14 +92,14 @@ class FineGymDataset(JointsDataset):
             dtype=np.float32
         ).reshape((self.num_joints, 1))
 
-        self.kpt_conf_thres = cfg.FINEGYM.KPT_CONF_THRES  # only use label with higher confidence
-        self.bb_conf_thres = cfg.FINEGYM.BB_CONF_THRES  # only use label with higher confidence
-        self.bb_size_thres = cfg.FINEGYM.BB_SIZE_THRES  # avoid using too small persons
+        self.kpt_conf_thres = cfg.POSETRACK.KPT_CONF_THRES  # only use label with higher confidence
+        self.bb_conf_thres = cfg.POSETRACK.BB_CONF_THRES  # only use label with higher confidence
+        self.bb_size_thres = cfg.POSETRACK.BB_SIZE_THRES  # avoid using too small persons
 
         """  # taking some 0-127 format returned from mmpose
         action_annotations = []
-        for part_file in os.listdir(cfg.FINEGYM.PSEUDO_LABEL):
-            with open(os.path.join(cfg.FINEGYM.PSEUDO_LABEL, part_file), "rb") as input_file:
+        for part_file in os.listdir(cfg.POSETRACK.PSEUDO_LABEL):
+            with open(os.path.join(cfg.POSETRACK.PSEUDO_LABEL, part_file), "rb") as input_file:
                 read = pickle.load(input_file)
                 action_annotations.extend(read)
         # 'time_stamp', 'action_name', 'bb', 'bb_score', 'img_shape', 'original_shape', 'total_frames', 'num_person_raw', 'keypoint', 'keypoint_score'
@@ -107,7 +107,7 @@ class FineGymDataset(JointsDataset):
         """
         db = []
         if json_index == -1:
-            event_jsons = [os.path.join(cfg.FINEGYM.PSEUDO_LABEL, _) for _ in os.listdir(cfg.FINEGYM.PSEUDO_LABEL)]  # 12818 json paths
+            event_jsons = [os.path.join(cfg.POSETRACK.PSEUDO_LABEL, _) for _ in os.listdir(cfg.POSETRACK.PSEUDO_LABEL)]  # 12818 json paths
             num_proc = max(1, multiprocessing.cpu_count() // 2)  # use all processors
             p = multiprocessing.Pool(num_proc)
             print(f"=> using {num_proc} processors to load FineGym...")
@@ -125,7 +125,7 @@ class FineGymDataset(JointsDataset):
             p.close()
             p.join()
         elif isinstance(json_index, str):
-            db.extend(self.load_annotation_for_event(os.path.join(cfg.FINEGYM.PSEUDO_LABEL, json_index)))
+            db.extend(self.load_annotation_for_event(os.path.join(cfg.POSETRACK.PSEUDO_LABEL, json_index)))
         else:
             raise NotImplemented
 
@@ -141,11 +141,11 @@ class FineGymDataset(JointsDataset):
             print(f"{event} non-exist")
             # return tbr
 
-        one_frame_name = read["annotations"][0]["image_id"]
+        one_frame_name = read["annotations"][0]["image_id"]  # an int like 10087600000
         # print(one_frame_name)
-        youtube_name = one_frame_name[:11]
-        _, event_s, event_e, _ = one_frame_name[12:].split("_")
-        event_folder = os.path.join(self.root, "processed_frames", "_".join([youtube_name, "E", event_s, event_e]))
+        image_id2path = {}
+        for im in read["images"]:
+            image_id2path[im["id"]] = im["file_name"]
 
         trash_track_ids = []
         for anno in read["annotations"]:
@@ -176,8 +176,8 @@ class FineGymDataset(JointsDataset):
                 joints_3d_vis = np.zeros((self.num_joints, 3), dtype=np.float)
                 joints_3d_vis[:, :2] = (kpt[:, 2:3] > self.kpt_conf_thres).astype(np.float)
                 center, scale = self._box2cs(anno['bbox'][:4])
-                glob_fidx = int(anno["image_id"].split("_")[-1])
-                image_path = os.path.join(event_folder, f"{glob_fidx:03}.jpg")  # no need to +1
+
+                image_path = os.path.join(self.root, image_id2path[anno["image_id"]])  # no need to +1
                 assert os.path.exists(image_path), f"Cannot fine {image_path}"
                 tbr.append({
                     'image': image_path,

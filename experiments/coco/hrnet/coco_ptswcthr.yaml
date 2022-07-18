@@ -26,16 +26,16 @@ DATASET:
   TEST_BBOX_FILE: 'data/coco/person_detection_results/COCO_val2017_detections_AP_H_56_person.json'
 POSETRACK:
   PCT: 20
-  PSEUDO_LABEL: 'smoother/COCO20_wo_smooth'
+  PSEUDO_LABEL: 'smoother/PT21_wo_smooth'
   BB_CONF_THRES: 0.8
   BB_SIZE_THRES: 0
   KPT_CONF_THRES: 0.5
   COLOR_RGB: true
-  DATASET: 'finegym'
+  DATASET: 'posetrack21'
   FLIP: true
   NUM_JOINTS_HALF_BODY: 8
   PROB_HALF_BODY: 0.3
-  ROOT: 'data/finegym'
+  ROOT: 'data/posetrack'
   ROT_FACTOR: 45
   SCALE_FACTOR: 0.35
 OCHUMAN:

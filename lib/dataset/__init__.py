@@ -12,3 +12,4 @@ from .mpii import MPIIDataset as mpii
 from .coco import COCODataset as coco
 from .finegym import FineGymDataset as finegym
 from .ochuman import OCHumanDataset as ochuman
+from .posetrack21 import PoseTrack21Dataset as posetrack21

@@ -84,6 +84,9 @@ _C.OCHUMAN = _C.DATASET.clone()
 _C.OCHUMAN.VAL_SET = ''
 _C.OCHUMAN.VAL_BBOX_FILE = ''
 
+# ADDITIONAL_TRAINSET related params
+_C.POSETRACK = _C.FINEGYM.clone()
+
 # train
 _C.TRAIN = CN()
 

@@ -14,7 +14,7 @@ USERNAME=keli22
 # host paths
 SRC_DIR="$PWD"
 
-EXPERIMENT_FOLDER_NAME=corrtrack_swin
+EXPERIMENT_FOLDER_NAME=corrtrack_baseline
 EXP=train
 
 # container paths
@@ -37,22 +37,22 @@ REFINED_POSES_FOLDER=pose_3_stage_warped_and_refined
 REFINED_POSE_NMS_FOLDER=pose_3_stage_refined_nms
 CORR_TRACKING_FOLDER=pose_3_stage_corr_tracking
 
-# 1) pose estimation
-# run single-person pose estimation on a given person bbox file (does the detection step contain NMS with IOU?)
-echo "RUN POSE ESTIMATION"
-CUDA_VISIBLE_DEVICES=$1 PYTHONPATH=$PWD \
-python corrtrack/inference/pose_estimation.py \
---save_path=${INFERENCE_FOLDER_PATH}/${EXPERIMENT_FOLDER_NAME}/${POSE_FOLDER}/sequences/ \
---dataset_path=${DATASET_PATH} \
---prefix=$EXP \
---annotation_file_path=${BBOX_ANNOTATION_FILE_PATH} \
---checkpoint_path=${POSE_ESTIMATION_MODEL_PATH} \
---joint_threshold=0.0 \
---output_size_x=288 \
---output_size_y=384 \
---num_stages=${NUM_POSE_STAGES} \
---batch_size=128 \
---num_workers=20
+# # 1) pose estimation
+# # run single-person pose estimation on a given person bbox file (does the detection step contain NMS with IOU?)
+# echo "RUN POSE ESTIMATION"
+# CUDA_VISIBLE_DEVICES=$1 PYTHONPATH=$PWD \
+# python corrtrack/inference/pose_estimation.py \
+# --save_path=${INFERENCE_FOLDER_PATH}/${EXPERIMENT_FOLDER_NAME}/${POSE_FOLDER}/sequences/ \
+# --dataset_path=${DATASET_PATH} \
+# --prefix=$EXP \
+# --annotation_file_path=${BBOX_ANNOTATION_FILE_PATH} \
+# --checkpoint_path=${POSE_ESTIMATION_MODEL_PATH} \
+# --joint_threshold=0.0 \
+# --output_size_x=288 \
+# --output_size_y=384 \
+# --num_stages=${NUM_POSE_STAGES} \
+# --batch_size=128 \
+# --num_workers=20
 
 # # 2) nms, CPU-only
 # # remove redundent persons by NMS with OKS
@@ -101,9 +101,10 @@ python corrtrack/inference/pose_estimation.py \
 # --joint_threshold=0.05 \
 # --oks_threshold=0.7
 
-# # 6) Corr Tracking, multi-GPU has some bug when batch size <= number of GPU
-# # here is only the assosiation step. it uses the Siamese network to have better OKS
-# echo "RUN TRACKING"
+# 6) Corr Tracking, multi-GPU has some bug when batch size <= number of GPU
+# here is only the assosiation step. it uses the Siamese network to have better OKS
+echo "RUN TRACKING"
+echo ${INFERENCE_FOLDER_PATH}/${EXPERIMENT_FOLDER_NAME}/${CORR_TRACKING_FOLDER}
 # CUDA_VISIBLE_DEVICES=$1 PYTHONPATH=$PWD \
 # python corrtrack/inference/run_corrtrack.py \
 # --save_path=${INFERENCE_FOLDER_PATH}/${EXPERIMENT_FOLDER_NAME}/${CORR_TRACKING_FOLDER}/ \
@@ -117,4 +118,6 @@ python corrtrack/inference/pose_estimation.py \
 # --duplicate_ratio=0.6 \
 # --post_process_joint_threshold=0.3 \
 # --break_tracks \
-# --ckpt_path=${CORR_MODEL_PATH}
+# --ckpt_path=${CORR_MODEL_PATH} \
+# --rank 0 \
+# --world 1

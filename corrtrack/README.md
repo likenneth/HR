@@ -6,11 +6,11 @@ bash scripts/posetracking/corrtrack_wo_docker.sh 0
 cd ..
 ```
 
-For evaluation on PoseTrack
+For evaluation on PoseTrack with `andoer` env
 ```
 python eval/posetrack21/scripts/run_pose_estimation.py --GT_FOLDER ~/datasets/PoseTrack21/posetrack_data/val --TRACKERS_FOLDER baselines/outputs/tracking_baselines/corrtrack_baseline/pose_3_stage_corr_tracking/jt_thres_0.1_duplicate_ratio_0.6_oks_0.2_corr_threshold_0.3_win_len_2_min_keypoints_2_min_track_len_3_break_tracks_True_pp_joint_threshold_0.3/sequences
 ```
-<!-- python eval/posetrack21/scripts/run_mot.py --GT_FOLDER ~/datasets/PoseTrack21/posetrack_mot/mot/val --TRACKERS_FOLDER baselines/outputs/tracking_baselines/corrtrack_baseline/pose_3_stage_corr_tracking/jt_thres_0.1_duplicate_ratio_0.6_oks_0.2_corr_threshold_0.3_win_len_2_min_keypoints_2_min_track_len_3_break_tracks_True_pp_joint_threshold_0.3/sequences -->
+
 # PoseTrack21
 Current research evaluates person search, multi-object tracking and multi-person pose estimation as separate tasks and on different datasets although these tasks are very akin to each other and comprise similar sub-tasks, e.g. person detection or appearance-based association of detected persons. Consequently, approaches on these respective tasks are eligible to complement each other. Therefore, we introduce PoseTrack21, a large-scale dataset for person search, multi-object tracking and multi-person pose tracking in real-world scenarios with a high diversity of poses. The dataset provides rich annotations like human pose annotations including annotations of joint occlusions, bounding box annotations even for small persons, and person-ids within and across video sequences. The dataset allows to evaluate multi-object tracking and multi-person pose tracking jointly with person re-identification or exploit structural knowledge of human poses to improve person search and tracking, particularly in the context of severe occlusions. With PoseTrack21, we want to encourage researchers to work on joint approaches that perform reasonably well on all three tasks.        
 

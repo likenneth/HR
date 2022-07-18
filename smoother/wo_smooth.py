@@ -7,6 +7,7 @@ import pprint
 import argparse
 import time
 import json
+import shutil
 
 import numpy as np
 import torch
@@ -38,7 +39,7 @@ def parse_args():
     # general
     parser.add_argument('--cfg',
                         help='experiment configure file name',
-                        default='experiments/coco/hrnet/coco_fgswcthr.yaml',
+                        default=None,
                         type=str)
 
     parser.add_argument('opts',
@@ -73,6 +74,7 @@ def parse_args():
     parser.add_argument('--rank', type=int, required=True)
     parser.add_argument('--world', type=int, required=True)
     parser.add_argument('--save_path', type=str, required=True)
+    parser.add_argument('--pt', action='store_true')
 
     args = parser.parse_args()
     return args
@@ -80,9 +82,19 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.pt:
+        args.cfg = "experiments/coco/hrnet/coco_ptswcthr.yaml"
+        dscfg = cfg.POSETRACK
+    else:
+        args.cfg = "experiments/coco/hrnet/coco_fgswcthr.yaml"
+        dscfg = cfg.FINEGYM
     update_config(cfg, args)
-    json_paths = list(os.listdir(cfg.FINEGYM.PSEUDO_LABEL))[args.rank::args.world]
+    json_paths = [_ for _ in os.listdir(dscfg.PSEUDO_LABEL) if _.endswith(".json")][args.rank::args.world]
     args.save_path = os.path.join("smoother", args.save_path)
+
+    if os.path.exists(args.save_path) and os.path.isdir(args.save_path):
+        shutil.rmtree(args.save_path)
+        print(f"Removing existing {args.save_path}")
     os.makedirs(args.save_path, exist_ok=True)
 
     logger, final_output_dir, tb_log_dir = create_logger(cfg, args.cfg, 'wo_smooth', enforced_name=args.exp)
@@ -124,8 +136,8 @@ def main():
         if os.path.exists(os.path.join(args.save_path, json_path)):
             continue  # avoid redoing
 
-        val_dataset = eval('dataset.'+cfg.FINEGYM.DATASET)(
-            cfg, cfg.FINEGYM.ROOT, cfg.FINEGYM.TRAIN_SET, False,
+        val_dataset = eval('dataset.'+dscfg.DATASET)(
+            cfg, dscfg.ROOT, dscfg.TRAIN_SET, False,
             transforms.Compose([
                 transforms.ToTensor(),
                 normalize,

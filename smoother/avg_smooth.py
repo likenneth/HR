@@ -1,11 +1,15 @@
 import os
 import sys
+from xmlrpc.client import boolean
+
+from matplotlib.colors import to_rgba
 # sys.path.insert(0, "../tools")
 os.chdir("..")
 
 import pprint
 import argparse
 import time
+import shutil
 import json
 from itertools import groupby, repeat
 from scipy.interpolate import LinearNDInterpolator
@@ -36,14 +40,12 @@ from utils.vis import save_debug_images
 import dataset
 import models
 
-DEBUG = False
-
 def parse_args():
     parser = argparse.ArgumentParser(description='Extract Keypoints with HRNet trained with HRNet repo for ONE video')
     # general
     parser.add_argument('--cfg',
                         help='experiment configure file name',
-                        default='experiments/coco/hrnet/coco_fgswcthr.yaml',
+                        default=None,
                         type=str)
 
     parser.add_argument('opts',
@@ -79,41 +81,64 @@ def parse_args():
     parser.add_argument('--world', type=int, required=True)
     parser.add_argument('--save_path', type=str, required=True)
     parser.add_argument('--window', type=int, required=True)
+    parser.add_argument('--vis', type=int, default=0)
+    parser.add_argument('--pt', action='store_true')
 
     args = parser.parse_args()
     return args
 
-@njit(parallel=True)
-def worker(cfg, dense_grids, dense_ps):
-    # dense_grids, [N=window size per, HW, 2]
-    # dense_ps, [N, #J, HW]
-    X_ = dense_grids[:, :cfg.MODEL.HEATMAP_SIZE[0], 0].flatten()  # [NW]
-    Y_ = dense_grids[:, 0::cfg.MODEL.HEATMAP_SIZE[0], 1].flatten()  # [NH]
-    X, Y = np.meshgrid(X_, Y_)  # both [NH, NW]
-    denser_ps = np.zeros((cfg.MODEL.NUM_JOINTS, Y_.shape[0], X_.shape[0]), dtype=np.float32)  # [#J, NH, NW]
-    for j in range(cfg.MODEL.NUM_JOINTS):
-        # TODO: hack the following line to do smoothing with different weights to neighbouring frames
-        ps = dense_ps[:, j].flatten()  # [NHW]
-        # interpolator takes in N*H*W points in 2D original-resolution plane, and gives out N*NH*NW points
-        interp = LinearNDInterpolator(dense_grids.reshape(ps.shape[0], 2), ps)
-        denser_ps[j] = interp(X, Y)  # [NH, NW]
+def weight_func1(distance):
+    # distance, int, between this frame and t
+    return 1 / (abs(distance) + 1)
 
-    width = denser_ps.shape[-1]  # i.e., NW
-    heatmaps_reshaped = denser_ps.reshape((cfg.MODEL.NUM_JOINTS, -1))  # [#J, NHNW]
-    indices = np.argmax(heatmaps_reshaped, 1)  # [#J], index within NHNW to index from X_, Y_, which are the real float coordinates
-    maxvals = np.amax(heatmaps_reshaped, 1)  # [#J]
-    tbr = np.stack([X_[indices % width], Y_[np.floor(indices / width).astype(np.int64)], maxvals], axis=-1)  # [#J, 3]
-    return tbr
+# @njit(parallel=True)
+def worker(cfg, boxes, outputs, weights):
+    # boxes, [N=window size per, 6], np.array
+    # outputs, an N-long list of [#J, W=96, H=72], np.array, each element from 0 to 1, not a probability distribution spatially
+    # weights, a list of N long, sums not necessarily to 1, only has one == 1 inside
+    # returned, [#J, W, H], heatmap that sums to 1
+    # TODO: extend to more interpolation methods from here: https://docs.scipy.org/doc/scipy/reference/interpolate.html#multivariate-interpolation
+    t = weights.index(1)  # the index of the main frame to process, out of 0 to N - 1
+    dense_grids, ps =  get_ori_coords(cfg, outputs[t], boxes[t, 0:2], boxes[t, 2:4])  # [HW, 2], [J, HW], global, (to left, from top) = (x, y), when indexing, should use [y, x]
 
+    X_ = dense_grids[:cfg.MODEL.HEATMAP_SIZE[0], 0].flatten()  # [W]
+    Y_ = dense_grids[0::cfg.MODEL.HEATMAP_SIZE[0], 1].flatten()  # [H]
+    X, Y = np.meshgrid(X_, Y_)  # both [H, W]
+
+    tbr = np.zeros(outputs[0].shape)
+    for i, weight in enumerate(weights):
+        if i == t:  # is main
+            tbr += weight * outputs[i]
+        else:
+            # map non-main frmae boxes to the global coordinates --> get an interpolator --> query with main frame grid
+            dense_grids_per, ps_per =  get_ori_coords(cfg, outputs[i], boxes[i, 0:2], boxes[i, 2:4])  # [HW, 2], [J, HW], global, (to left, from top) = (x, y), when indexing, should use [y, x]
+            tba = np.zeros(outputs[0].shape, dtype=np.float32)  # [#J, H, W]
+            for j in range(cfg.MODEL.NUM_JOINTS):
+                interp = LinearNDInterpolator(dense_grids_per, ps_per[j])
+                tba[j] = interp(X, Y)
+            tbr += weight * tba
+    return tbr#  / tbr.sum(axis=-1).sum(axis=-1)[:, None, None]
 
 def main():
     args = parse_args()
+    if args.pt:
+        args.cfg = "experiments/coco/hrnet/coco_ptswcthr.yaml"
+        dscfg = cfg.POSETRACK
+    else:
+        args.cfg = "experiments/coco/hrnet/coco_fgswcthr.yaml"
+        dscfg = cfg.FINEGYM
     update_config(cfg, args)
-    json_paths = list(os.listdir(cfg.FINEGYM.PSEUDO_LABEL))[args.rank::args.world]
+
+    json_paths = [_ for _ in os.listdir(dscfg.PSEUDO_LABEL) if _.endswith(".json")][args.rank::args.world]
     args.save_path = os.path.join("smoother", args.save_path)
+
+    if os.path.exists(args.save_path) and os.path.isdir(args.save_path):
+        shutil.rmtree(args.save_path)
+        print(f"Removing existing {args.save_path}")
+    os.makedirs(args.save_path, exist_ok=True)
     os.makedirs(args.save_path, exist_ok=True)
 
-    logger, final_output_dir, tb_log_dir = create_logger(cfg, args.cfg, 'wo_smooth', enforced_name=args.exp)
+    logger, final_output_dir, tb_log_dir = create_logger(cfg, args.cfg, 'avg_smooth', enforced_name=args.exp)
 
     logger.info(pprint.pformat(args))
     logger.info(cfg)
@@ -152,8 +177,8 @@ def main():
         if os.path.exists(os.path.join(args.save_path, json_path)):
             continue  # avoid redoing
 
-        val_dataset = eval('dataset.'+cfg.FINEGYM.DATASET)(
-            cfg, cfg.FINEGYM.ROOT, cfg.FINEGYM.TRAIN_SET, False,
+        val_dataset = eval('dataset.'+dscfg.DATASET)(
+            cfg, dscfg.ROOT, dscfg.TRAIN_SET, False,
             transforms.Compose([
                 transforms.ToTensor(),
                 normalize,
@@ -188,9 +213,8 @@ def main():
         num_samples = len(val_dataset)
         all_boxes = np.zeros((num_samples, 6))
         track_ids = np.zeros((num_samples, ))  # a list of track ids starting 0 with different lengths
-        image_path = []
-        dense_grid_container = np.zeros((num_samples, cfg.MODEL.HEATMAP_SIZE[1] * cfg.MODEL.HEATMAP_SIZE[0], 2), dtype=np.float32)  # [B, HW, 2]
-        p_container = np.zeros((num_samples, cfg.MODEL.NUM_JOINTS, cfg.MODEL.HEATMAP_SIZE[1] * cfg.MODEL.HEATMAP_SIZE[0]), dtype=np.float32)  # [B, #J, HW]
+        input_container = []  # a list of CPU torch tensors
+        output_container = []  # a list of numpy arrays
 
         with torch.no_grad():
             end = time.time()
@@ -245,70 +269,74 @@ def main():
                 track_id = meta['track_id'].numpy()
 
                 # preds, maxvals = get_final_preds(cfg, output.clone().cpu().numpy(), c, s)  # output, [B, J, H, W]
-                dense_grids, ps =  get_ori_coords(cfg, output.clone().cpu().numpy(), c, s)  # [B, HW, 2], [B, J, HW], global, (to left, from top) = (x, y), when indexing, should use [y, x]
 
-                if DEBUG and i == 0:
-                    prefix = os.path.join(args.save_path, f"{json_path[:-5]}_avg_{i}")
-                    # note that the input to debug() is pred not preds, pred is in relative coordinates, preds is in global coordinates
-                    save_debug_images(cfg, input, meta, target, pred*4, output, prefix)  # output, [B, J, W=96, H=72], tensor
                 all_boxes[idx:idx + num_images, 0:2] = c[:, 0:2]
                 all_boxes[idx:idx + num_images, 2:4] = s[:, 0:2]
                 all_boxes[idx:idx + num_images, 4] = np.prod(s*200, 1)  # area
                 all_boxes[idx:idx + num_images, 5] = score
                 track_ids[idx:idx + num_images] = track_id
-                image_path.extend(meta['image'])
-                dense_grid_container[idx:idx + num_images, :] = dense_grids
-                p_container[idx:idx + num_images, :] = ps
-
+                input_container.extend([_[0].numpy() for _  in torch.split(input.detach().cpu(), split_size_or_sections=1, dim=0)])
+                output_container.extend([_[0].numpy() for _ in torch.split(output.detach().cpu(), split_size_or_sections=1, dim=0)])
                 idx += num_images
             
-        assert idx == num_samples == len(image_path), str(idx) + " " + str(num_samples) + " " + str(len(image_path))
-
+        assert idx == num_samples == len(input_container) == len(output_container), str(idx) + " " + str(num_samples) + " " + str(len(input_container)) + " " + str(len(output_container))
+        print("=> loop 1 finished")
         hw = int(args.window // 2)  # half window size
-        
-        # smoothing: generate a new all_preds from dense_grid_container ([[B, HW, 2]]) and p_container ([B, #J, HW])
+        import pickle
+        with open("output.pkl", "wb") as f:
+            pickle.dump(output_container, f, protocol=pickle.HIGHEST_PROTOCOL)
         
         # Create the input list for parallizing
         idx = 0
         x1_container = []
         x2_container = []
+        x3_container = []
         for track_id, g in groupby(track_ids.tolist()):            
             num_images = len(list(g))
-            # TODO: extend to more interpolation methods from here: https://docs.scipy.org/doc/scipy/reference/interpolate.html#multivariate-interpolation
             for t in range(num_images):
                 start_frame = max(0, t - hw)  # index of the start frame within this track
                 end_frame = min(num_images - 1, t + hw)
                 actual_ws = end_frame - start_frame + 1  # i.e., N
                 # TODO: add ways to propagate coordinates between frames
-                dense_grids = dense_grid_container[idx + start_frame: idx + end_frame + 1]  # [N=window size per, HW, 2]
-                dense_ps = p_container[idx + start_frame: idx + end_frame + 1]  # [N, #J, HW]
-                x1_container.append(dense_grids)
-                x2_container.append(dense_ps)
+                boxes = all_boxes[idx + start_frame: idx + end_frame + 1]  # [N=window size per, 6]
+                outputs = output_container[idx + start_frame: idx + end_frame + 1]  # [N, #J, W=96, H=72]
+                x1_container.append(boxes)
+                x2_container.append(outputs)
+                x3_container.append([weight_func1(t - ttt) for ttt in range(start_frame, end_frame + 1)])
             idx += num_images
-        assert idx == num_samples == len(x1_container) == len(x2_container), str(idx) + " " + str(num_samples)
+        assert idx == num_samples == len(x1_container) == len(x2_container) == len(x3_container), str(idx) + " " + str(num_samples) + " " + str(len(x1_container)) + " " + str(len(x2_container)) + " " + str(len(x3_container))
+        print("=> loop 2 finished")
 
         # Run multi-processing
         num_proc = max(1, multiprocessing.cpu_count() - 1)  # use all processors
         p = multiprocessing.Pool(num_proc)
-        all_preds = []  # B-long list of [#J, 3]
-        for res in p.starmap(worker, tqdm(zip(repeat(cfg), x1_container, x2_container, ), total=num_samples, desc=f"=> using {num_proc} processors for {json_path}")):
-            all_preds.append(res)
-
+        refined_output_container = []  # a list of numpy arrays, [#J, W, H]
+        for refined_output in p.starmap(worker, tqdm(zip(repeat(cfg), x1_container, x2_container, x3_container), disable=False, total=num_samples, desc=f"=> using {num_proc} processors for {json_path}")):
+            refined_output_container.append(refined_output)
         p.close()
         p.join()
+        print("=> loop 3 finished")
+
+        all_preds = []  # B-long list of [#J, 3]
+        for idx, (refined_output, boxes) in enumerate(zip(refined_output_container, all_boxes)):
+            c = boxes[0:2]
+            s = boxes[2:4]
+            pred, maxvals = get_final_preds(cfg, refined_output, c, s)  # [#J, 2], [#J, 1]
+            all_preds.append(np.concatenate([pred, maxvals], axis=-1))
+            if args.vis and idx % args.vis == hw + 1:
+                prefix = os.path.join(args.save_path, f"{json_path[:-5]}_avg2_{idx // args.vis}")
+                # note that the input to debug() is pred not preds, pred is in relative coordinates, preds is in global coordinates
+                save_debug_images(
+                    cfg, 
+                    input=input_container[idx - hw: idx + hw + 1] + [input_container[idx], ],  # window + 1 rows, with the bottom row being the main image
+                    meta=None, target=None, joints_pred=None, 
+                    output=output_container[idx - hw: idx + hw + 1] + [refined_output, ], 
+                    prefix=prefix
+                )  # refined_output, [B, #J, W=96, H=72], tensor
         all_preds = np.stack(all_preds, axis=0)
+        print("=> loop 4 finished")
 
-        # dump results for this event
-        with open(os.path.join(cfg.FINEGYM.PSEUDO_LABEL, json_path), "rb") as f:
-            video_annos = json.load(f)  # 'images', 'annotations', 'categories'
-
-        assert num_samples == len(video_annos["annotations"]), str(num_samples) + " " + str(len(video_annos["annotations"]))
-        for idx in range(num_samples):  # because the dataloader does not shuffle and there is no re-used track id in one video
-            video_annos["annotations"][idx]["keypoints"] = all_preds[idx].flatten().tolist()
-            video_annos["annotations"][idx]["scores"] = all_preds[idx, -1].flatten().tolist()
-
-        with open(os.path.join(args.save_path, json_path), "w") as f:
-            json.dump(video_annos, f)
+        val_dataset.dump_with_updated(all_preds, os.path.join(args.save_path, json_path))
 
 if __name__ == '__main__':
     main()

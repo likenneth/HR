@@ -15,28 +15,21 @@ python tools/train.py --cfg experiments/coco/hrnet/coco.yaml --exp coco DATASET.
 
 Pyskl skeleton results are unusable. 
 It's hard to create gymnast tracking for Finegym by simple heuristic. 
+PHALP results are unstable for gymnastic videos.
 
-Full pipeline for FineGym, Sports1M, PoseTrack21, etc.: (developed on PoseTrack)
-+ With `HR/openmmlab`, infer with Swin to get a annotation file like `~/CorrTrack/baselines/data/detections/PoseTrack21_tracktor_bb_thres_0.5_val.json`
-    + bbox in format xywh while mmdet gives result in xyxy
-    + save to `CorrTrack/baselines/data/detections`
-+ Create image annotation with like `CorrTrack/create_image_annotation.py` for CorrTrack
-+ With `CorrTrack`, save down tubelets with bounding boxes, in CorrTrack format
+Full pipeline for FineGym, Sports1M, or PoseTrack21, etc.:
++ With `HR/corrtrack`, save down tubelets with bounding boxes, in CorrTrack format
     + 1 json for 1 video
     + 1 list element in annotations for one bbox
     + 1 list element in images for one frame
     + bbox in format xywh
-    + save to `CorrTrack/baselines/outputs/tracking_baselines/corrtrack_baseline/pose_3_stage_corr_tracking`
-+ With `HR/openmmlab`, infer with HRNet, (do keypoint smoothing), and save down results in COCO format:
-    + 1 pkl for a list of persons
+    + save to `HR/corrtrack/baselines/outputs/tracking_baselines/corrtrack_baseline/pose_3_stage_corr_tracking`
++ With `HR/smoother/wo_smooth.py`, infer with customized HRNet trained in HRNet codebase, (or do keypoint smoothing with `avg_smooth2.py`), and save down results in COCO format:
+    + 1 json for a video
     + COCO format has bbox format xywh
-    + in a result folder in `HR/openmmlab`
+    + in a result folder in `smoother`
 + Visualize with `pyskl` or `HR/jupyters`
 + With `HR`, retrain by mixing with COCO annotations (with confidence level), observe COCO mAP on val2017
-
-A baseline for comparision:
-+ Run person detection with Swin and pose estimation with HRNet with `openmmlab`
-+ Convert to COCO format and do joint training wit COCO annotations
 
 # Deep High-Resolution Representation Learning for Human Pose Estimation (CVPR 2019)
 ## News
