@@ -15,3 +15,8 @@ python tools/train.py --exp coco20_fgswcthr_wo5000bb --cfg experiments/coco/hrne
 
 # python tools/test.py --exp coco --cfg experiments/coco/hrnet/coco_scale2.yaml DATASET.PARTIAL 1.0 GPUS '(0,1)'
 # python tools/finetune_pt.py --exp posetrack --cfg experiments/coco/hrnet/coco_ptswcthr.yaml POSETRACK.PSEUDO_LABEL 'data/posetrack/posetrack_data' TRAIN.LR 0.0001
+
+##############
+##### AK #####
+##############  dataset hasn't been set up
+# python tools/train.py --exp akp1 --cfg experiments/mpii/hrnet/w32_256x256_adam_lr1e-3_akP1.yaml

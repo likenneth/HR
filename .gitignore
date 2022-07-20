@@ -102,3 +102,4 @@ openmmlab/*/*.json
 openmmlab/*/*.pkl
 
 smoother/COCO*/*
+smoother/PT21*/*
