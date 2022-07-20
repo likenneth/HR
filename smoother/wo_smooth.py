@@ -85,11 +85,13 @@ def main():
     if args.pt:
         args.cfg = "experiments/coco/hrnet/coco_ptswcthr.yaml"
         dscfg = cfg.POSETRACK
+        sub_folder = "val"
     else:
         args.cfg = "experiments/coco/hrnet/coco_fgswcthr.yaml"
         dscfg = cfg.FINEGYM
+        sub_folder = ""
     update_config(cfg, args)
-    json_paths = [_ for _ in os.listdir(dscfg.PSEUDO_LABEL) if _.endswith(".json")][args.rank::args.world]
+    json_paths = [_ for _ in os.listdir(os.path.join(dscfg.PSEUDO_LABEL, sub_folder)) if _.endswith(".json")][args.rank::args.world]
     args.save_path = os.path.join("smoother", args.save_path)
 
     # if os.path.exists(args.save_path) and os.path.isdir(args.save_path):

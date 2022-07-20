@@ -33,7 +33,7 @@ from core.loss import JointsMSELoss
 from utils.utils import create_logger
 from core.function import AverageMeter
 from core.evaluate import accuracy
-from core.inference import get_final_preds, get_ori_coords
+from core.inference import get_final_preds, get_ori_coords, get_max_preds
 from utils.transforms import flip_back
 from utils.vis import save_debug_images
 
@@ -81,6 +81,7 @@ def parse_args():
     parser.add_argument('--world', type=int, required=True)
     parser.add_argument('--save_path', type=str, required=True)
     parser.add_argument('--window', type=int, required=True)
+    parser.add_argument('--track_bb', type=float, default=0.)  # do nothing on all tracks that contain any persons too small
     parser.add_argument('--vis', type=int, default=0)
     parser.add_argument('--pt', action='store_true')
 
@@ -111,11 +112,11 @@ def worker(cfg, boxes, outputs, weights):
             tbr += weight * outputs[i]
         else:
             # map non-main frmae boxes to the global coordinates --> get an interpolator --> query with main frame grid
-            dense_grids_per, ps_per =  get_ori_coords(cfg, outputs[i], boxes[i, 0:2], boxes[i, 2:4])  # [HW, 2], [J, HW], global, (to left, from top) = (x, y), when indexing, should use [y, x]
+            dense_grids_per, ps_per = get_ori_coords(cfg, outputs[i], boxes[i, 0:2], boxes[i, 2:4])  # [HW, 2], [J, HW], global, (to left, from top) = (x, y), when indexing, should use [y, x]
             tba = np.zeros(outputs[0].shape, dtype=np.float32)  # [#J, H, W]
             for j in range(cfg.MODEL.NUM_JOINTS):
                 interp = LinearNDInterpolator(dense_grids_per, ps_per[j])
-                tba[j] = interp(X, Y)
+                tba[j] = np.nan_to_num(interp(X, Y))  # if the query is out of the convex hull of input points, it will return nan
             tbr += weight * tba
     return tbr#  / tbr.sum(axis=-1).sum(axis=-1)[:, None, None]
 
@@ -124,12 +125,13 @@ def main():
     if args.pt:
         args.cfg = "experiments/coco/hrnet/coco_ptswcthr.yaml"
         dscfg = cfg.POSETRACK
+        sub_folder = "val"
     else:
         args.cfg = "experiments/coco/hrnet/coco_fgswcthr.yaml"
         dscfg = cfg.FINEGYM
+        sub_folder = ""
     update_config(cfg, args)
-
-    json_paths = [_ for _ in os.listdir(dscfg.PSEUDO_LABEL) if _.endswith(".json")][args.rank::args.world]
+    json_paths = [_ for _ in os.listdir(os.path.join(dscfg.PSEUDO_LABEL, sub_folder)) if _.endswith(".json")][args.rank::args.world]
     args.save_path = os.path.join("smoother", args.save_path)
 
     # if os.path.exists(args.save_path) and os.path.isdir(args.save_path):
@@ -281,9 +283,9 @@ def main():
         assert idx == num_samples == len(input_container) == len(output_container), str(idx) + " " + str(num_samples) + " " + str(len(input_container)) + " " + str(len(output_container))
         print("=> loop 1 finished")
         hw = int(args.window // 2)  # half window size
-        import pickle
-        with open("output.pkl", "wb") as f:
-            pickle.dump(output_container, f, protocol=pickle.HIGHEST_PROTOCOL)
+        # import pickle
+        # with open("output.pkl", "wb") as f:
+        #     pickle.dump(output_container, f, protocol=pickle.HIGHEST_PROTOCOL)
         
         # Create the input list for parallizing
         idx = 0
@@ -298,7 +300,7 @@ def main():
                 actual_ws = end_frame - start_frame + 1  # i.e., N
                 # TODO: add ways to propagate coordinates between frames
                 boxes = all_boxes[idx + start_frame: idx + end_frame + 1]  # [N=window size per, 6]
-                outputs = output_container[idx + start_frame: idx + end_frame + 1]  # [N, #J, W=96, H=72]
+                outputs = output_container[idx + start_frame: idx + end_frame + 1]  # [N, #J, H=96, W=72]
                 x1_container.append(boxes)
                 x2_container.append(outputs)
                 x3_container.append([weight_func1(t - ttt) for ttt in range(start_frame, end_frame + 1)])
@@ -309,7 +311,7 @@ def main():
         # Run multi-processing
         num_proc = max(1, multiprocessing.cpu_count() - 1)  # use all processors
         p = multiprocessing.Pool(num_proc)
-        refined_output_container = []  # a list of numpy arrays, [#J, W, H]
+        refined_output_container = []  # a list of numpy arrays, [#J, H, W]
         for refined_output in p.starmap(worker, tqdm(zip(repeat(cfg), x1_container, x2_container, x3_container), disable=False, total=num_samples, desc=f"=> using {num_proc} processors for {json_path}")):
             refined_output_container.append(refined_output)
         p.close()
@@ -322,16 +324,29 @@ def main():
             s = boxes[2:4]
             pred, maxvals = get_final_preds(cfg, refined_output, c, s)  # [#J, 2], [#J, 1]
             all_preds.append(np.concatenate([pred, maxvals], axis=-1))
-            if args.vis and idx % args.vis == hw + 1:
-                prefix = os.path.join(args.save_path, f"{json_path[:-5]}_avg2_{idx // args.vis}")
-                # note that the input to debug() is pred not preds, pred is in relative coordinates, preds is in global coordinates
+            if args.vis and idx % args.vis == hw:  # first time full window appears every vis cycle
+                prefix = os.path.join(args.save_path, f"{json_path[:-5]}_avg_{idx // args.vis}")
+
+                # dump heatmaps of window + 1 rows, with the bottom row being the main image
                 save_debug_images(
                     cfg, 
-                    input=input_container[idx - hw: idx + hw + 1] + [input_container[idx], ],  # window + 1 rows, with the bottom row being the main image
+                    input=input_container[idx - hw: idx + hw + 1] + [input_container[idx], ],
                     meta=None, target=None, joints_pred=None, 
                     output=output_container[idx - hw: idx + hw + 1] + [refined_output, ], 
                     prefix=prefix
                 )  # refined_output, [B, #J, W=96, H=72], tensor
+
+                # dump prediction inside of the whole vis cycle
+                output_tbu = refined_output_container[idx - hw: idx - hw + args.vis]
+                pred, confs = get_max_preds(np.stack(output_tbu, axis=0))
+                save_debug_images(
+                    cfg, 
+                    input=input_container[idx - hw: idx - hw + args.vis],
+                    meta=None, target=None, joints_pred=np.concatenate([pred*4, confs], axis=-1), 
+                    output=None,
+                    prefix=prefix
+                )
+
         all_preds = np.stack(all_preds, axis=0)
         print("=> loop 4 finished")
 

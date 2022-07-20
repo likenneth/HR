@@ -171,6 +171,7 @@ class FineGymDataset(JointsDataset):
             kpt = np.array(anno["keypoints"]).reshape(self.num_joints, 3)
             area = anno['bbox'][2] * anno['bbox'][3]
             if np.any(kpt[:, -1] > self.kpt_conf_thres) and area > self.bb_size_thres:  # filter bb size by retraining needs
+                # at smoothing stage be sure to override the bb_size to 0
                 joints_3d = np.zeros((self.num_joints, 3), dtype=np.float)
                 joints_3d[:, :2] = kpt[:, :2]
                 joints_3d_vis = np.zeros((self.num_joints, 3), dtype=np.float)

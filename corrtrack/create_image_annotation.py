@@ -98,6 +98,34 @@ from tqdm import tqdm
 # for finegym event level #
 ###########################
 
+# fg_dir = "/private/home/keli22/datasets/FineGym"
+# ipt_dir = os.path.join(fg_dir, "processed_frames")
+# opt_dir = os.path.join(fg_dir, "posetrack_data")
+# os.makedirs(opt_dir, exist_ok=True)
+
+# for video_name in tqdm(os.listdir(ipt_dir)):
+#     tbd = {"images": [], }
+#     video_index = video_name.split("_")[0]
+#     length = len(os.listdir(os.path.join(ipt_dir, video_name)))
+#     for frame_jpg in sorted(list(os.listdir(os.path.join(ipt_dir, video_name)))):
+#         fidx = int(frame_jpg.split(".")[0])  # starting from 1
+#         tba = {
+#             "file_name": f"processed_frames/{video_name}/{frame_jpg}", 
+#             "has_labeled_person": True, 
+#             "vid_id": video_name, 
+#             "id": f"{video_name}_{fidx:03}", 
+#             "image_id": f"{video_name}_{fidx:03}", 
+#             "is_labeled": False, 
+#             "nframes": length, 
+#         }
+#         tbd["images"].append(tba)
+#     with open(os.path.join(opt_dir, f"{video_name}.json"), "w") as f:
+#         json.dump(tbd, f)
+
+###########################
+# for finegym event level #
+###########################
+
 fg_dir = "/private/home/keli22/datasets/FineGym"
 ipt_dir = os.path.join(fg_dir, "processed_frames")
 opt_dir = os.path.join(fg_dir, "posetrack_data")

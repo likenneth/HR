@@ -26,6 +26,9 @@ def save_batch_image_with_joints(batch_image, batch_joints, batch_joints_vis,
     batch_joints_vis: [batch_size, num_joints, 1],
     }
     '''
+
+    if isinstance(batch_image, list):
+        batch_image = torch.tensor(np.stack(batch_image, axis=0))
     grid = torchvision.utils.make_grid(batch_image, nrow, padding, True)
     ndarr = grid.mul(255).clamp(0, 255).byte().permute(1, 2, 0).cpu().numpy()
     ndarr = ndarr.copy()
@@ -125,14 +128,15 @@ def save_debug_images(config, input, meta=None, target=None, joints_pred=None, o
     if not config.DEBUG.DEBUG:
         return
 
-    if config.DEBUG.SAVE_BATCH_IMAGES_GT:
+    if config.DEBUG.SAVE_BATCH_IMAGES_GT and meta is not None and hasattr(meta, "joints"):
         save_batch_image_with_joints(
             input, meta['joints'], meta['joints_vis'],
             '{}_gt.jpg'.format(prefix)
         )
-    if config.DEBUG.SAVE_BATCH_IMAGES_PRED:
+    if config.DEBUG.SAVE_BATCH_IMAGES_PRED and joints_pred is not None:
+        tbf = meta['joints_vis'] if hasattr(meta, "joints_vis") else joints_pred[..., 2:3] > 0.0
         save_batch_image_with_joints(
-            input, joints_pred, meta['joints_vis'],
+            input, joints_pred, tbf,
             '{}_pred.jpg'.format(prefix)
         )
     if config.DEBUG.SAVE_HEATMAPS_GT and target is not None:

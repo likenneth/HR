@@ -1,0 +1,6 @@
+map & Head & Shou & Elb & Wri & Hip & Knee & Ankl & Total
+ & 83.0 & 82.1 & 79.9 & 75.7 & 78.2 & 76.9 & 71.7 & 78.5
+precision & Head & Shou & Elb & Wri & Hip & Knee & Ankl & Total
+ & 89.3 & 86.2 & 68.6 & 62.0 & 74.2 & 63.8 & 52.2 & 72.1
+recall & Head & Shou & Elb & Wri & Hip & Knee & Ankl & Total
+ & 85.2 & 85.3 & 84.8 & 82.4 & 83.2 & 81.8 & 77.6 & 83.1
